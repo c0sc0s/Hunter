@@ -43,7 +43,7 @@ export function mergeRecognitionResult(
     status: previous.status,
     favorite: previous.favorite,
     note: input.note ?? previous.note,
-    tags: normalizeTags([...(previous.tags ?? []), ...(input.tags ?? enriched.tags)]),
+    tags: normalizeTags([...(previous.tags ?? []), ...(input.tags ?? []), ...(enriched.tags ?? [])]),
     captureInput
   };
 }

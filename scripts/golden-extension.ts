@@ -170,7 +170,9 @@ try {
   const popupSavedItem = await waitForApiItem((item) => item.title === popupFixtureTitle && item.enrichmentState === "ready");
   assert.equal(popupSavedItem.sourceAccess, "browser_snapshot");
   assert.equal(popupSavedItem.captureMethod, "extension_snapshot");
-  assert.deepEqual(popupSavedItem.tags, ["popup-e2e"]);
+  assert.ok(popupSavedItem.tags.includes("popup-e2e"));
+  assert.ok(popupSavedItem.tags.includes("article"));
+  assert.ok(popupSavedItem.tags.length > 1);
   assert.equal(popupSavedItem.note, "saved through visible popup golden");
   assert.match(popupSavedItem.readableText ?? "", /visible extension save button reuses/);
   assert.equal("captureInput" in popupSavedItem, false);

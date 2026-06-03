@@ -120,6 +120,7 @@ try {
       contentSignalsMs: 7,
       itemBuildMs: 4
     },
+    tags: ["recognized", "auto-topic"],
     contentHash: "hash-recognized",
     captureInput: {
       url: "https://example.com/a"
@@ -127,7 +128,7 @@ try {
   });
 
   const replaced = await repo.replaceRecognitionResult(mergedAfterUrlOnly.id, enriched, {
-    tags: ["recognized"]
+    tags: []
   });
 
   assert.equal(replaced?.title, "Recognized title");
@@ -145,6 +146,8 @@ try {
   });
   assert.equal(replaced?.contentHash, "hash-recognized");
   assert.ok(replaced?.tags.includes("recognized"));
+  assert.ok(replaced?.tags.includes("auto-topic"));
+  assert.ok(replaced?.tags.includes("workflow"));
   assert.equal(replaced?.captureInput?.snapshot?.textContent, "Newer duplicate browser snapshot for future recognition refresh.");
   assert.equal((await repo.listCaptureEvents(10)).find((event) => event.id === "capture-event-queued")?.itemId, "item-1");
 
