@@ -94,7 +94,7 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Connectors
 
-`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/feishu/sync` imports saved Feishu `/docx/{document_id}` items through the official raw-content API. Wiki indirection, token refresh, and background sync are still future work. Private X content still requires browser snapshot capture or a future X connector.
+`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/feishu/sync` imports saved Feishu `/docx/{document_id}` items plus `/wiki/{node_token}` pages that resolve to docx through the official raw-content API. Token refresh, non-docx wiki import, block/image/attachment fidelity, and background sync are still future work. Private X content still requires browser snapshot capture or a future X connector.
 
 Feishu OAuth configuration:
 
@@ -102,7 +102,7 @@ Feishu OAuth configuration:
 $env:HUNTTER_FEISHU_CLIENT_ID="cli_xxx"
 $env:HUNTTER_FEISHU_CLIENT_SECRET="xxx"
 $env:HUNTTER_FEISHU_REDIRECT_URI="http://127.0.0.1:4317/api/connectors/feishu/oauth/callback"
-$env:HUNTTER_FEISHU_SCOPES="offline_access docx:document:readonly"
+$env:HUNTTER_FEISHU_SCOPES="offline_access docx:document:readonly wiki:wiki:readonly"
 ```
 
 Connector tokens are encrypted before JSON/SQLite storage. Set `HUNTTER_CONNECTOR_SECRET_KEY` to pin the encryption key; otherwise Huntter creates a local key under `data/`.

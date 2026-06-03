@@ -1332,6 +1332,72 @@
         }
       ],
       "next": "Add Feishu wiki token resolution and token refresh before broadening sync coverage."
+    },
+    {
+      "id": "feishu-wiki-docx-resolution",
+      "title": "Resolve Feishu wiki URLs to docx raw content",
+      "status": "done",
+      "scope": [
+        "Extract `/wiki/{node_token}` tokens from saved Feishu URLs.",
+        "Resolve wiki nodes through the official Feishu wiki get_node API using the encrypted server-side user access token.",
+        "Import wiki nodes only when they resolve to docx objects.",
+        "Fetch the resolved docx raw content through the existing Feishu raw-content import path.",
+        "Use the resolved wiki node title when Feishu returns one.",
+        "Record connector Capture Events without storing raw content in the event stream."
+      ],
+      "outOfScope": [
+        "Non-docx wiki object import",
+        "Block-level rendering",
+        "Image and attachment import",
+        "Automatic token refresh",
+        "Background sync scheduling"
+      ],
+      "dependencies": ["feishu-docx-raw-content-sync"],
+      "definitionOfDone": [
+        "`POST /api/connectors/feishu/sync` resolves saved wiki URL-only items to docx before raw-content import.",
+        "Imported wiki-backed items use `captureMethod: connector` and `sourceAccess: requires_auth` without `requiredConnector`.",
+        "Non-docx wiki nodes are skipped rather than falsely imported.",
+        "Capture Events record wiki connector import outcomes without raw content leakage.",
+        "`pnpm smoke:api` covers OAuth scopes, saved wiki URL-only capture, wiki-node resolution, raw-content import, item replacement, and event privacy.",
+        "`pnpm verify` passes with the Feishu wiki resolution slice included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm smoke:api",
+          "proves": "A saved Feishu wiki URL can move from `needs_connector` to connector-imported `ready` content through manual sync with mocked Feishu wiki get_node and docx raw-content API responses."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The async wiki resolution path and connector import types compile cleanly."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Feishu wiki resolution remains compatible with the full local gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm lint", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/connectorImport/feishuImport.ts",
+            "server/connectorAuth/feishuOAuth.ts",
+            "server/connectors.ts",
+            "scripts/smoke-api.ts",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "docs/DATABASE_DESIGN.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Smoke coverage mocks Feishu wiki get_node and raw-content HTTP responses. The implementation uses the official endpoint shapes for wiki-node resolution and docx raw-content import, but does not import non-docx wiki objects, refresh expired tokens, import blocks/images/attachments, or schedule background sync.",
+          "notes": "Manual Feishu sync now scans saved Feishu connector-needed items, resolves wiki node tokens to docx object tokens when possible, imports the resolved docx raw content through the decrypted server-side user access token, uses the resolved node title, and records connector Capture Events without raw document text."
+        }
+      ],
+      "next": "Add Feishu token refresh and block/image/attachment import before broadening sync coverage."
     }
   ]
 }

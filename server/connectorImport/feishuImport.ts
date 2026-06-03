@@ -15,13 +15,32 @@ import { normalizeTags } from "../tags";
 
 const provider = "feishu";
 const rawContentUrlBase = "https://open.feishu.cn/open-apis/docx/v1/documents";
+const wikiNodeUrl = "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node";
 const syncPageSize = 120;
+
+type FeishuDocumentTarget = {
+  documentId: string;
+  title?: string;
+  source: "docx_url" | "wiki_node";
+};
 
 type FeishuRawContentResponse = {
   code?: number;
   msg?: string;
   data?: {
     content?: string;
+  };
+};
+
+type FeishuWikiNodeResponse = {
+  code?: number;
+  msg?: string;
+  data?: {
+    node?: {
+      obj_token?: string;
+      obj_type?: string;
+      title?: string;
+    };
   };
 };
 
@@ -55,14 +74,14 @@ export async function syncFeishuConnector(repository: LibraryRepository): Promis
   const failures: string[] = [];
 
   for await (const item of listFeishuConnectorItems(repository)) {
-    const documentId = extractDirectDocxDocumentId(item.url);
-    if (!documentId) {
-      counters.skipped += 1;
-      continue;
-    }
-
     try {
-      const imported = await importFeishuRawContentItem({ item, documentId, accessToken });
+      const target = await resolveFeishuDocumentTarget(item.url, accessToken);
+      if (!target) {
+        counters.skipped += 1;
+        continue;
+      }
+
+      const imported = await importFeishuRawContentItem({ item, target, accessToken });
       const updated = await repository.replaceRecognitionResult(item.id, imported, { note: item.note, tags: item.tags });
       if (!updated) {
         counters.failed += 1;
@@ -113,19 +132,46 @@ export function extractDirectDocxDocumentId(url: string): string | undefined {
   return /^[A-Za-z0-9]{20,64}$/.test(token) ? token : undefined;
 }
 
+export function extractWikiNodeToken(url: string): string | undefined {
+  const parsed = new URL(url);
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const wikiIndex = segments.findIndex((segment) => segment === "wiki");
+  const token = wikiIndex >= 0 ? segments[wikiIndex + 1] : undefined;
+  if (!token) return undefined;
+  return /^[A-Za-z0-9]{8,128}$/.test(token) ? token : undefined;
+}
+
+async function resolveFeishuDocumentTarget(url: string, accessToken: string): Promise<FeishuDocumentTarget | undefined> {
+  const directDocumentId = extractDirectDocxDocumentId(url);
+  if (directDocumentId) {
+    return { documentId: directDocumentId, source: "docx_url" };
+  }
+
+  const wikiToken = extractWikiNodeToken(url);
+  if (!wikiToken) return undefined;
+
+  const node = await fetchWikiNode(wikiToken, accessToken);
+  if (node.objType !== "docx") return undefined;
+  return {
+    documentId: node.objToken,
+    title: node.title,
+    source: "wiki_node"
+  };
+}
+
 async function importFeishuRawContentItem({
   item,
-  documentId,
+  target,
   accessToken
 }: {
   item: LibraryItem;
-  documentId: string;
+  target: FeishuDocumentTarget;
   accessToken: string;
 }): Promise<LibraryItem> {
   const timer = createRecognitionTimer();
   const extracted = await timer.measure("sourceAdapterMs", async () => {
-    const rawText = await fetchRawContent(documentId, accessToken);
-    return buildExtractedContent(item, documentId, rawText);
+    const rawText = await fetchRawContent(target.documentId, accessToken);
+    return buildExtractedContent(item, target, rawText);
   });
   const enrichment = await timer.measure("contentSignalsMs", () => enrichContent(extracted));
   const now = new Date().toISOString();
@@ -201,11 +247,46 @@ async function fetchRawContent(documentId: string, accessToken: string): Promise
   return content;
 }
 
-function buildExtractedContent(item: LibraryItem, documentId: string, rawText: string): ExtractedContent {
+async function fetchWikiNode(wikiToken: string, accessToken: string): Promise<{ objToken: string; objType: string; title?: string }> {
+  const url = new URL(wikiNodeUrl);
+  url.searchParams.set("token", wikiToken);
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Feishu wiki node request failed: HTTP ${response.status} ${text.slice(0, 300)}`);
+  }
+
+  const payload = JSON.parse(text) as FeishuWikiNodeResponse;
+  if (payload.code !== undefined && payload.code !== 0) {
+    throw new Error(`Feishu wiki node request failed: ${payload.msg ?? `code ${payload.code}`}`);
+  }
+
+  const objToken = cleanText(payload.data?.node?.obj_token);
+  const objType = cleanText(payload.data?.node?.obj_type);
+  if (!objToken || !objType) {
+    throw new Error("Feishu wiki node response did not include obj_token and obj_type");
+  }
+
+  return {
+    objToken,
+    objType,
+    title: cleanText(payload.data?.node?.title) || undefined
+  };
+}
+
+function buildExtractedContent(item: LibraryItem, target: FeishuDocumentTarget, rawText: string): ExtractedContent {
   const normalizedUrl = normalizeUrl(item.url);
   const quality = decideContentQuality([{ source: "connector", text: rawText }]);
   const readableText = quality.readableText || rawText;
-  const title = inferTitle(readableText, item.title);
+  const title = target.title ?? inferTitle(readableText, item.title);
+  const sourceLabel = target.source === "wiki_node" ? "resolved Feishu wiki document" : "Feishu document";
 
   return {
     url: normalizedUrl,
@@ -223,7 +304,7 @@ function buildExtractedContent(item: LibraryItem, documentId: string, rawText: s
     captureMethod: "connector",
     extractor: "feishu_raw_content",
     sourceAccess: "requires_auth",
-    sourceMessage: `Imported Feishu document ${documentId} through the authorized connector.`
+    sourceMessage: `Imported ${sourceLabel} ${target.documentId} through the authorized connector.`
   };
 }
 

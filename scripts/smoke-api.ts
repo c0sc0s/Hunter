@@ -50,7 +50,7 @@ try {
   process.env.HUNTTER_FEISHU_CLIENT_ID = "cli_a_test";
   process.env.HUNTTER_FEISHU_CLIENT_SECRET = "feishu-secret";
   process.env.HUNTTER_FEISHU_REDIRECT_URI = `${baseUrl}/api/connectors/feishu/oauth/callback`;
-  process.env.HUNTTER_FEISHU_SCOPES = "offline_access docx:document:readonly";
+  process.env.HUNTTER_FEISHU_SCOPES = "offline_access docx:document:readonly wiki:wiki:readonly";
 
   const oauthStart = await postJson<{
     provider: string;
@@ -62,7 +62,7 @@ try {
   }>("/api/connectors/feishu/oauth/start", undefined, 200);
   assert.equal(oauthStart.provider, "feishu");
   assert.equal(oauthStart.redirectUri, `${baseUrl}/api/connectors/feishu/oauth/callback`);
-  assert.deepEqual(oauthStart.scopes, ["offline_access", "docx:document:readonly"]);
+  assert.deepEqual(oauthStart.scopes, ["offline_access", "docx:document:readonly", "wiki:wiki:readonly"]);
   assert.match(oauthStart.expiresAt, /^20/);
 
   const authorizationUrl = new URL(oauthStart.authorizationUrl);
@@ -71,7 +71,7 @@ try {
   assert.equal(authorizationUrl.searchParams.get("client_id"), "cli_a_test");
   assert.equal(authorizationUrl.searchParams.get("redirect_uri"), `${baseUrl}/api/connectors/feishu/oauth/callback`);
   assert.equal(authorizationUrl.searchParams.get("state"), oauthStart.state);
-  assert.equal(authorizationUrl.searchParams.get("scope"), "offline_access docx:document:readonly");
+  assert.equal(authorizationUrl.searchParams.get("scope"), "offline_access docx:document:readonly wiki:wiki:readonly");
   assert.equal(authorizationUrl.searchParams.get("code_challenge_method"), "S256");
   assert.ok(authorizationUrl.searchParams.get("code_challenge"));
 
@@ -94,7 +94,7 @@ try {
           token_type: "Bearer",
           expires_in: 3600,
           refresh_expires_in: 7200,
-          scope: "offline_access docx:document:readonly"
+          scope: "offline_access docx:document:readonly wiki:wiki:readonly"
         }
       });
     }
@@ -121,7 +121,7 @@ try {
   const credential = await libraryRepository.getConnectorCredential("feishu");
   assert.ok(credential);
   assert.equal(credential.tokenType, "Bearer");
-  assert.equal(credential.scope, "offline_access docx:document:readonly");
+  assert.equal(credential.scope, "offline_access docx:document:readonly wiki:wiki:readonly");
   assert.equal(credential.accessTokenCiphertext.includes("u-test-access-token"), false);
   assert.equal(credential.refreshTokenCiphertext?.includes("u-test-refresh-token"), false);
 
@@ -211,6 +211,115 @@ try {
     )
   );
   assert.equal(JSON.stringify(feishuImportEvents).includes(importedFeishuText), false);
+
+  const wikiFeishuDocUrl = "https://bytedance.larkoffice.com/wiki/WikiNodeTokenForDocx123";
+  const wikiFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
+    url: wikiFeishuDocUrl,
+    tags: ["connector-sync", "wiki"]
+  });
+  assert.equal(wikiFeishu.enrichmentState, "processing");
+
+  const connectorNeededWikiFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    requiredConnector?: string;
+    captureInput?: unknown;
+  }>(wikiFeishu.id, "needs_connector");
+  assert.equal(connectorNeededWikiFeishu.requiredConnector, "feishu");
+  assert.equal("captureInput" in connectorNeededWikiFeishu, false);
+
+  const resolvedWikiDocumentId = "doxbcWikiResolvedDocxToken12345";
+  const importedWikiFeishuText = Array.from(
+    { length: 8 },
+    (_, index) => `Feishu wiki connector paragraph ${index + 1} proves wiki node resolution can import the resolved docx raw content.`
+  ).join(" ");
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+    const parsedUrl = new URL(requestUrl);
+
+    if (
+      parsedUrl.origin === "https://open.feishu.cn" &&
+      parsedUrl.pathname === "/open-apis/wiki/v2/spaces/get_node" &&
+      parsedUrl.searchParams.get("token") === "WikiNodeTokenForDocx123"
+    ) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      return jsonResponse({
+        code: 0,
+        data: {
+          node: {
+            obj_token: resolvedWikiDocumentId,
+            obj_type: "docx",
+            title: "Resolved Wiki Doc"
+          }
+        }
+      });
+    }
+
+    if (requestUrl === `https://open.feishu.cn/open-apis/docx/v1/documents/${resolvedWikiDocumentId}/raw_content?lang=0`) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      return jsonResponse({ code: 0, data: { content: importedWikiFeishuText } });
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const feishuWikiImportSync = await postJson<{
+      connector: { provider: string; connectionState: string; lastSyncAt?: string };
+      imported: number;
+      skipped: number;
+      failed: number;
+      message?: string;
+    }>("/api/connectors/feishu/sync", undefined, 200);
+    assert.equal(feishuWikiImportSync.connector.provider, "feishu");
+    assert.equal(feishuWikiImportSync.connector.connectionState, "connected");
+    assert.match(feishuWikiImportSync.connector.lastSyncAt ?? "", /^20/);
+    assert.equal(feishuWikiImportSync.imported, 1);
+    assert.equal(feishuWikiImportSync.skipped, 0);
+    assert.equal(feishuWikiImportSync.failed, 0);
+    assert.match(feishuWikiImportSync.message ?? "", /imported 1/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const importedWikiFeishu = await waitForItem<{
+    id: string;
+    title: string;
+    enrichmentState: string;
+    captureMethod?: string;
+    sourceAccess?: string;
+    sourceMessage?: string;
+    requiredConnector?: string;
+    readableText?: string;
+    contentHtml?: string;
+    contentHash?: string;
+    captureInput?: unknown;
+  }>(wikiFeishu.id, "ready");
+  assert.equal(importedWikiFeishu.title, "Resolved Wiki Doc");
+  assert.equal(importedWikiFeishu.captureMethod, "connector");
+  assert.equal(importedWikiFeishu.sourceAccess, "requires_auth");
+  assert.match(importedWikiFeishu.sourceMessage ?? "", /resolved Feishu wiki document/i);
+  assert.equal(importedWikiFeishu.requiredConnector, undefined);
+  assert.match(importedWikiFeishu.readableText ?? "", /wiki node resolution can import/);
+  assert.match(importedWikiFeishu.contentHtml ?? "", /wiki node resolution can import/);
+  assert.match(importedWikiFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
+  assert.equal("captureInput" in importedWikiFeishu, false);
+
+  const feishuWikiImportEvents = await getJson<{
+    events: Array<{
+      itemId?: string;
+      captureMethod: string;
+      snapshotBytes: number;
+      resultState: string;
+    }>;
+  }>("/api/capture-events?limit=40");
+  assert.ok(
+    feishuWikiImportEvents.events.some(
+      (event) =>
+        event.itemId === wikiFeishu.id && event.captureMethod === "connector" && event.snapshotBytes === 0 && event.resultState === "ready"
+    )
+  );
+  assert.equal(JSON.stringify(feishuWikiImportEvents).includes(importedWikiFeishuText), false);
 
   const disconnectedFeishuConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
     "/api/connectors/feishu"

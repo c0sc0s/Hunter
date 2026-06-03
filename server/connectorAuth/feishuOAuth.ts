@@ -9,7 +9,7 @@ const provider: ConnectorProvider = "feishu";
 const authorizeUrl = "https://accounts.feishu.cn/open-apis/authen/v1/authorize";
 const tokenUrl = "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
 const userInfoUrl = "https://open.feishu.cn/open-apis/authen/v1/user_info";
-const defaultScopes = ["offline_access", "docx:document:readonly"];
+const defaultScopes = ["offline_access", "docx:document:readonly", "wiki:wiki:readonly"];
 
 type FeishuOAuthConfig = {
   clientId: string;

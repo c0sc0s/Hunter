@@ -11,7 +11,7 @@ Last updated: 2026-06-03
 - Feishu/X permissioned-source failures carry `requiredConnector` and render against connector state.
 - Connector state can now be updated or cleared through the API, while connector sync requests fail explicitly until real provider handlers exist.
 - Feishu OAuth authorization start/callback exists behind configured app credentials and stores access/refresh tokens as encrypted server-side connector credentials.
-- Feishu manual sync can import saved direct `/docx/{document_id}` URL-only items through the official raw-content API and replace `needs_connector` with connector-provenance `ready`/`partial` content.
+- Feishu manual sync can import saved direct `/docx/{document_id}` URL-only items and `/wiki/{node_token}` pages that resolve to docx through official Feishu APIs, replacing `needs_connector` with connector-provenance `ready`/`partial` content.
 - Disconnecting Feishu clears encrypted connector credentials as well as public connector state.
 - The web sidebar now exposes manual connector Sync and Disconnect controls, and planned availability no longer hides local connection state.
 - The web sidebar now exposes manual connector Connect controls; users still click Reload after completing OAuth because the client does not poll.
@@ -101,6 +101,8 @@ Last updated: 2026-06-03
 - Latest run refreshed `win32-x64` visual baselines after the sidebar connector action changed from Sync to Connect for disconnected providers.
 - Latest run added Feishu direct docx raw-content import on manual connector sync, using decrypted server-side user access tokens and recording connector Capture Events without raw content leakage.
 - Latest run expanded `pnpm smoke:api` to cover URL-only Feishu docx capture, connector sync import, connector provenance, sanitized reader HTML, content hash, and event privacy.
+- Latest run added Feishu wiki node resolution on manual connector sync, using the official wiki get_node API before docx raw-content import.
+- Latest run expanded `pnpm smoke:api` to cover URL-only Feishu wiki capture, wiki-to-docx resolution, connector provenance, resolved title usage, sanitized reader HTML, content hash, and event privacy.
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
@@ -110,11 +112,11 @@ Last updated: 2026-06-03
 
 ## Open Gaps
 
-- Feishu OAuth authorization, encrypted token storage, and direct docx raw-content import are implemented, but wiki resolution, block fidelity, token refresh, and background sync are not implemented.
+- Feishu OAuth authorization, encrypted token storage, direct docx raw-content import, and wiki-node-to-docx import are implemented, but non-docx wiki import, block fidelity, token refresh, and background sync are not implemented.
 - X OAuth/import connector is not implemented; only local connector state control and explicit unsupported sync responses exist.
 - Native Chrome toolbar bubble target inspection is still not executable through Playwright in this workspace; the toolbar action popup API itself is now smoke-tested.
 - `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should add Feishu wiki token resolution, token refresh, or block-level import; generate and commit `linux-x64` visual baselines; or explore CDP target inspection for native toolbar bubble screenshots.
+All current harness features are `done`. The next hardening step should add Feishu token refresh, block-level import, non-docx wiki import, generate and commit `linux-x64` visual baselines, or explore CDP target inspection for native toolbar bubble screenshots.
