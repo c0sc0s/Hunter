@@ -56,9 +56,9 @@ pnpm build
 
 The extension saves to `http://127.0.0.1:4317` by default.
 
-When saving a page, the extension captures a focused article/main content root when possible instead of blindly sending the full page shell. It caps snapshot HTML, text, and image candidates before posting to the local API so Save stays responsive on heavy pages. Popup Save, context-menu Save, and extension E2E all route through the same background capture pipeline.
+When saving a page, the extension captures a focused article/main content root when possible instead of blindly sending the full page shell. It caps snapshot HTML, text, and image candidates before posting to the local API so Save stays responsive on heavy pages. Toolbar action popup launch, Popup Save, context-menu Save, and extension E2E all route through the same background capture pipeline.
 
-`pnpm golden:extension` runs the installed extension against isolated local API, web, and article fixture servers. It proves extension background capture, visible popup Save, Web manual Reload, Capture Events visibility, and no public `captureInput` leakage.
+`pnpm golden:extension` runs the installed extension against isolated local API, web, and article fixture servers. It proves extension background capture, toolbar action popup launch through `chrome.action.openPopup()`, visible popup Save, Web manual Reload, Capture Events visibility, and no public `captureInput` leakage.
 
 ## Content Recognition
 

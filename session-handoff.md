@@ -10,7 +10,7 @@
 ## Current Session
 
 - Goal: continue hardening Huntter into a commercial-grade, source-first content recognition system without AI dependency.
-- Completed features: all 24 harness slices are `done`, through `platform-visual-baseline-diff`.
+- Completed features: all 25 harness slices are `done`, through `toolbar-action-popup-smoke`.
 - Verification: `pnpm verify` passed on 2026-06-03.
 
 ## Handoff Notes
@@ -23,6 +23,7 @@
 - Stored capture input is size-bounded in `server/captureInput.ts` before persistence.
 - `pnpm golden:browser` runs an isolated Playwright journey covering save, manual Reload, extension-style snapshot capture, search, favorite, status change, and manual Refresh.
 - `pnpm golden:extension` installs the real MV3 extension in Chromium, saves deterministic local articles through the extension background path and visible popup Save, verifies Web manual Reload and Capture Events, and asserts no public snapshot leakage.
+- `pnpm golden:extension` also invokes `chrome.action.openPopup()` from the service worker to smoke-test the toolbar action entry; Playwright still does not expose the native toolbar bubble as an interactable page target here.
 - `.github/workflows/verify.yml` runs `pnpm verify` on pull requests and pushes to `main` with Node 22, pnpm 10.33.0, Playwright Chromium, and Xvfb.
 - `pnpm golden:visual` checks desktop/mobile visual contracts, no horizontal overflow, reader iframe visibility, Capture Events visibility, and writes screenshots to `artifacts/visual/`.
 - `pnpm golden:visual` also compares screenshots against platform baselines when present; `tests/visual-baselines/win32-x64/` is committed and `pnpm golden:visual:update` refreshes baselines explicitly.
@@ -33,4 +34,4 @@
 
 ## Next Action
 
-All current harness features are done. The next useful slice is generating and committing `linux-x64` visual baselines, toolbar-bubble automation, or a connector-specific implementation.
+All current harness features are done. The next useful slice is generating and committing `linux-x64` visual baselines, exploring CDP target inspection for native toolbar bubble screenshots, or a connector-specific implementation.

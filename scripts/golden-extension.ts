@@ -16,6 +16,9 @@ type ExtensionSaveResponse = {
 };
 
 type ChromeApi = {
+  action: {
+    openPopup(): Promise<void>;
+  };
   runtime: {
     sendMessage(message: Record<string, unknown>): Promise<ExtensionSaveResponse>;
   };
@@ -144,6 +147,9 @@ try {
   await popupFixturePage.goto(popupFixtureUrl);
   await popupFixturePage.getByRole("heading", { name: popupFixtureTitle }).waitFor();
   await popupFixturePage.bringToFront();
+
+  await assertToolbarPopupLaunch(serviceWorker);
+
   const popupTabId = await extensionPage.evaluate(
     async ({ popupFixtureUrl }) => {
       const [tab] = await chrome.tabs.query({ url: popupFixtureUrl });
@@ -263,6 +269,16 @@ function extensionIdFromWorker(worker: Worker): string {
   const match = /^chrome-extension:\/\/([^/]+)\//.exec(worker.url());
   assert.ok(match, `Expected extension service worker URL, received ${worker.url()}`);
   return match[1];
+}
+
+async function assertToolbarPopupLaunch(worker: Worker): Promise<void> {
+  await worker.evaluate(async () => {
+    if (!chrome.action?.openPopup) {
+      throw new Error("chrome.action.openPopup is not available in this Chromium build");
+    }
+
+    await chrome.action.openPopup();
+  });
 }
 
 async function getFreePort(): Promise<number> {

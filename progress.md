@@ -28,6 +28,7 @@ Last updated: 2026-06-03
 - Browser golden journey is executable through `pnpm golden:browser` and is included in `pnpm verify`.
 - Installed Chrome extension golden journey is executable through `pnpm golden:extension` and is included in `pnpm verify`.
 - The installed extension golden now covers both background save messaging and visible popup Save clicks.
+- The installed extension golden now invokes `chrome.action.openPopup()` to smoke-test the toolbar action popup entry before the observable popup Save flow.
 - Visual golden journey is executable through `pnpm golden:visual` and is included in `pnpm verify`.
 - Visual golden now compares against committed platform-specific PNG baselines when a baseline exists; `win32-x64` baselines are committed.
 - ESLint and Prettier are configured and included in `pnpm verify`.
@@ -82,6 +83,7 @@ Last updated: 2026-06-03
 - Latest run expanded `pnpm golden:browser` to cover manual Capture Events panel reload and extension snapshot event visibility.
 - Latest run added `pnpm golden:extension` for installed Manifest V3 capture through the real extension background path, Web manual Reload, Capture Events, no public `captureInput`, and no raw snapshot text in event responses.
 - Latest run extended `pnpm golden:extension` to click the visible popup Save button and verify tags, note, reader content, and browser-snapshot provenance.
+- Latest run extended `pnpm golden:extension` to invoke `chrome.action.openPopup()` from the service worker before the observable popup Save flow.
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
@@ -92,9 +94,9 @@ Last updated: 2026-06-03
 ## Open Gaps
 
 - Feishu and X connectors are not implemented.
-- Chrome toolbar bubble automation is not yet executable.
+- Native Chrome toolbar bubble target inspection is still not executable through Playwright in this workspace; the toolbar action popup API itself is now smoke-tested.
 - `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, add toolbar-bubble automation, or start the first connector-specific implementation slice.
+All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, explore CDP target inspection for native toolbar bubble screenshots, or start the first connector-specific implementation slice.

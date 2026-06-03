@@ -807,7 +807,7 @@
           "notes": "Popup initialization now reads page title and URL without injecting the extractor. The Save button stores API base, sends tags and note to the background save-tab message path, and reports Saved only after the API returns a queued item. The golden verifies the visible popup click saves a second article, preserves tags and note, reaches ready recognition, renders reader content after Web manual Reload, and keeps captureInput out of public responses."
         }
       ],
-      "next": "Add toolbar-bubble automation only if it reveals risks not covered by the popup-page click path."
+      "next": "Completed by the toolbar action popup smoke slice for API-level toolbar launch coverage."
     },
     {
       "id": "github-actions-verify-ci",
@@ -1050,6 +1050,58 @@
         }
       ],
       "next": "Generate and commit linux-x64 baselines from the GitHub Actions environment, then remove the temporary missing-baseline allowance."
+    },
+    {
+      "id": "toolbar-action-popup-smoke",
+      "title": "Smoke test the Chrome toolbar action popup entry",
+      "status": "done",
+      "scope": [
+        "Invoke `chrome.action.openPopup()` from the installed extension service worker during the extension golden journey.",
+        "Keep visible popup Save coverage through an observable extension popup page with the real popup UI.",
+        "Verify toolbar action launch, popup tags, note, reader content, browser-snapshot provenance, Capture Events, and stripped public capture input in one installed-extension flow."
+      ],
+      "outOfScope": [
+        "Pixel or DOM inspection of Chrome's native toolbar bubble target",
+        "Chrome Web Store packaging",
+        "Live external websites",
+        "Connector OAuth"
+      ],
+      "dependencies": ["extension-popup-save-path"],
+      "definitionOfDone": [
+        "`pnpm golden:extension` invokes `chrome.action.openPopup()` without error.",
+        "`pnpm golden:extension` still clicks the visible popup Save button and verifies saved content end to end.",
+        "`pnpm check` and `pnpm lint` pass after the extension golden refactor.",
+        "`pnpm verify` passes with the toolbar action smoke included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:extension",
+          "proves": "The installed extension can launch its toolbar action popup API and still save through the visible popup UI."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The extension golden toolbar action helper remains type-safe."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The zero-warning lint gate remains clean after the extension golden refactor."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Toolbar action popup smoke remains compatible with the full local verification gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm golden:extension", "pnpm harness:init", "pnpm format:check", "pnpm check", "pnpm lint", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["scripts/golden-extension.ts", "feature-list.json"],
+          "mockBoundary": "Playwright does not expose Chrome's native toolbar bubble as an interactable page target in this run. The test therefore asserts `chrome.action.openPopup()` is executable and keeps the actual Save click on the observable popup page that uses the same production popup UI and background pipeline.",
+          "notes": "The installed extension golden now launches the toolbar action popup API before opening the observable popup page for Save. The resulting item still preserves popup tags and note, reaches ready browser-snapshot recognition, renders reader content after Web manual Reload, and keeps captureInput out of public responses."
+        }
+      ],
+      "next": "Use CDP target inspection only if future Chromium tooling exposes native toolbar bubble targets reliably."
     }
   ]
 }
