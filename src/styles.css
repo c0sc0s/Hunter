@@ -7,10 +7,14 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  --scrollbar-track: oklch(0.12 0.004 49.25);
+  --scrollbar-thumb: oklch(0.36 0.082 48.998);
+  --scrollbar-thumb-hover: oklch(0.52 0.15 48.998);
+  --scrollbar-border: oklch(0.18 0.006 56.043);
   --background: oklch(1 0 0);
   --foreground: oklch(0.147 0.004 49.25);
   --card: oklch(1 0 0);
@@ -77,6 +81,10 @@
   --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.553 0.013 58.071);
+  --scrollbar-track: oklch(0.12 0.004 49.25);
+  --scrollbar-thumb: oklch(0.36 0.082 48.998);
+  --scrollbar-thumb-hover: oklch(0.52 0.15 48.998);
+  --scrollbar-border: oklch(0.18 0.006 56.043);
 }
 
 @theme inline {
@@ -126,7 +134,7 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    scrollbar-color: color-mix(in oklch, var(--primary) 55%, transparent) color-mix(in oklch, var(--background) 82%, var(--muted));
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     scrollbar-width: thin;
   }
 
@@ -149,17 +157,21 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: color-mix(in oklch, var(--background) 86%, var(--muted));
+    background: var(--scrollbar-track);
     border-radius: 999px;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in oklch, var(--primary) 62%, transparent);
-    border: 2px solid color-mix(in oklch, var(--background) 86%, var(--muted));
+    background: var(--scrollbar-thumb);
+    border: 2px solid var(--scrollbar-border);
     border-radius: 999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklch, var(--primary) 78%, var(--foreground));
+    background: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
   }
 }
