@@ -10,7 +10,7 @@
 ## Current Session
 
 - Goal: continue hardening Huntter into a commercial-grade, source-first content recognition system without AI dependency.
-- Completed features: all 30 harness slices are `done`, through `feishu-token-refresh-before-sync`.
+- Completed features: all 31 harness slices are `done`, through `feishu-legacy-doc-raw-content-sync`.
 - Verification: `pnpm verify` passed on 2026-06-03.
 
 ## Handoff Notes
@@ -35,9 +35,9 @@
 - The web sidebar has manual connector Sync/Disconnect controls, separates local connection state from planned availability, and no longer clips Capture or connector controls.
 - Feishu OAuth authorization start/callback is implemented when `HUNTTER_FEISHU_CLIENT_ID` and `HUNTTER_FEISHU_CLIENT_SECRET` are configured.
 - Feishu access/refresh tokens are stored through server-only repository credential methods after AES-GCM sealing; manual sync refreshes expired or near-expired access tokens and public connector APIs do not return token material.
-- Manual Feishu sync imports saved direct `/docx/{document_id}` URL-only items and `/wiki/{node_token}` pages that resolve to docx through official Feishu APIs, replacing `needs_connector` with connector-provenance content.
-- Feishu non-docx wiki import, block/image/attachment import, permission refresh, and background sync are still not implemented.
+- Manual Feishu sync imports saved direct `/docx/{document_id}` URL-only items, legacy `/docs/{docToken}` items, and `/wiki/{node_token}` pages that resolve to docx or legacy doc through official Feishu APIs, replacing `needs_connector` with connector-provenance content.
+- Feishu non-document wiki import, block/image/attachment import, permission refresh, and background sync are still not implemented.
 
 ## Next Action
 
-All current harness features are done. The next useful slice is Feishu block-level import, non-docx wiki import, permission refresh, generating and committing `linux-x64` visual baselines, or exploring CDP target inspection for native toolbar bubble screenshots.
+All current harness features are done. The next useful slice is Feishu block-level import, block image/attachment import, permission refresh, background sync, generating and committing `linux-x64` visual baselines, or exploring CDP target inspection for native toolbar bubble screenshots.

@@ -12,7 +12,7 @@ Last updated: 2026-06-03
 - Connector state can now be updated or cleared through the API, while connector sync requests fail explicitly until real provider handlers exist.
 - Feishu OAuth authorization start/callback exists behind configured app credentials and stores access/refresh tokens as encrypted server-side connector credentials.
 - Feishu manual sync refreshes expired or near-expired access tokens with the stored refresh token before provider API calls.
-- Feishu manual sync can import saved direct `/docx/{document_id}` URL-only items and `/wiki/{node_token}` pages that resolve to docx through official Feishu APIs, replacing `needs_connector` with connector-provenance `ready`/`partial` content.
+- Feishu manual sync can import saved direct `/docx/{document_id}` URL-only items, legacy `/docs/{docToken}` items, and `/wiki/{node_token}` pages that resolve to docx or legacy doc through official Feishu APIs, replacing `needs_connector` with connector-provenance `ready`/`partial` content.
 - Disconnecting Feishu clears encrypted connector credentials as well as public connector state.
 - The web sidebar now exposes manual connector Sync and Disconnect controls, and planned availability no longer hides local connection state.
 - The web sidebar now exposes manual connector Connect controls; users still click Reload after completing OAuth because the client does not poll.
@@ -106,6 +106,8 @@ Last updated: 2026-06-03
 - Latest run expanded `pnpm smoke:api` to cover URL-only Feishu wiki capture, wiki-to-docx resolution, connector provenance, resolved title usage, sanitized reader HTML, content hash, and event privacy.
 - Latest run added Feishu access-token refresh before manual connector sync, rotating encrypted access and refresh tokens when stored access is expired or near expiry.
 - Latest run expanded `pnpm smoke:api` to cover expired-token detection, refresh-token exchange, one-time refresh-token rotation, encrypted credential replacement, and subsequent docx/wiki API calls using the refreshed access token.
+- Latest run added Feishu legacy doc raw-content import for direct `/docs/{docToken}` URLs and wiki nodes that resolve to old `doc` objects.
+- Latest run expanded `pnpm smoke:api` to cover URL-only legacy docs capture, wiki-to-legacy-doc resolution, `doc/v2/:docToken/raw_content`, connector provenance, sanitized reader HTML, content hash, and event privacy.
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
@@ -115,11 +117,11 @@ Last updated: 2026-06-03
 
 ## Open Gaps
 
-- Feishu OAuth authorization, encrypted token storage, sync-time token refresh, direct docx raw-content import, and wiki-node-to-docx import are implemented, but non-docx wiki import, block fidelity, permission refresh, and background sync are not implemented.
+- Feishu OAuth authorization, encrypted token storage, sync-time token refresh, direct docx raw-content import, legacy doc raw-content import, and wiki-node-to-docx/doc import are implemented, but non-document wiki import, block fidelity, permission refresh, and background sync are not implemented.
 - X OAuth/import connector is not implemented; only local connector state control and explicit unsupported sync responses exist.
 - Native Chrome toolbar bubble target inspection is still not executable through Playwright in this workspace; the toolbar action popup API itself is now smoke-tested.
 - `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should add Feishu block-level import, non-docx wiki import, permission refresh, generate and commit `linux-x64` visual baselines, or explore CDP target inspection for native toolbar bubble screenshots.
+All current harness features are `done`. The next hardening step should add Feishu block-level import, block image/attachment import, permission refresh, background sync, generate and commit `linux-x64` visual baselines, or explore CDP target inspection for native toolbar bubble screenshots.

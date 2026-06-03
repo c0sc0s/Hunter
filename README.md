@@ -94,7 +94,7 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Connectors
 
-`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/feishu/sync` refreshes expired Feishu access tokens before importing saved `/docx/{document_id}` items plus `/wiki/{node_token}` pages that resolve to docx through the official raw-content API. Non-docx wiki import, block/image/attachment fidelity, permission refresh, and background sync are still future work. Private X content still requires browser snapshot capture or a future X connector.
+`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/feishu/sync` refreshes expired Feishu access tokens before importing saved `/docx/{document_id}`, legacy `/docs/{docToken}`, and `/wiki/{node_token}` pages that resolve to docx or legacy doc through the official raw-content APIs. Non-document wiki import, block/image/attachment fidelity, permission refresh, and background sync are still future work. Private X content still requires browser snapshot capture or a future X connector.
 
 Feishu OAuth configuration:
 

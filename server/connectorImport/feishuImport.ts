@@ -14,14 +14,16 @@ import { cleanText, faviconFor, normalizeUrl } from "../sources/url";
 import { normalizeTags } from "../tags";
 
 const provider = "feishu";
-const rawContentUrlBase = "https://open.feishu.cn/open-apis/docx/v1/documents";
+const docxRawContentUrlBase = "https://open.feishu.cn/open-apis/docx/v1/documents";
+const legacyDocRawContentUrlBase = "https://open.feishu.cn/open-apis/doc/v2";
 const wikiNodeUrl = "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node";
 const syncPageSize = 120;
 
 type FeishuDocumentTarget = {
-  documentId: string;
+  token: string;
+  type: "docx" | "legacy_doc";
   title?: string;
-  source: "docx_url" | "wiki_node";
+  source: "docx_url" | "legacy_doc_url" | "wiki_node";
 };
 
 type FeishuRawContentResponse = {
@@ -132,6 +134,15 @@ export function extractDirectDocxDocumentId(url: string): string | undefined {
   return /^[A-Za-z0-9]{20,64}$/.test(token) ? token : undefined;
 }
 
+export function extractDirectLegacyDocToken(url: string): string | undefined {
+  const parsed = new URL(url);
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  const docsIndex = segments.findIndex((segment) => segment === "docs" || segment === "doc");
+  const token = docsIndex >= 0 ? segments[docsIndex + 1] : undefined;
+  if (!token) return undefined;
+  return /^[A-Za-z0-9]{20,64}$/.test(token) ? token : undefined;
+}
+
 export function extractWikiNodeToken(url: string): string | undefined {
   const parsed = new URL(url);
   const segments = parsed.pathname.split("/").filter(Boolean);
@@ -144,16 +155,23 @@ export function extractWikiNodeToken(url: string): string | undefined {
 async function resolveFeishuDocumentTarget(url: string, accessToken: string): Promise<FeishuDocumentTarget | undefined> {
   const directDocumentId = extractDirectDocxDocumentId(url);
   if (directDocumentId) {
-    return { documentId: directDocumentId, source: "docx_url" };
+    return { token: directDocumentId, type: "docx", source: "docx_url" };
+  }
+
+  const directLegacyDocToken = extractDirectLegacyDocToken(url);
+  if (directLegacyDocToken) {
+    return { token: directLegacyDocToken, type: "legacy_doc", source: "legacy_doc_url" };
   }
 
   const wikiToken = extractWikiNodeToken(url);
   if (!wikiToken) return undefined;
 
   const node = await fetchWikiNode(wikiToken, accessToken);
-  if (node.objType !== "docx") return undefined;
+  const documentType = documentTargetTypeForWikiObject(node.objType);
+  if (!documentType) return undefined;
   return {
-    documentId: node.objToken,
+    token: node.objToken,
+    type: documentType,
     title: node.title,
     source: "wiki_node"
   };
@@ -170,7 +188,7 @@ async function importFeishuRawContentItem({
 }): Promise<LibraryItem> {
   const timer = createRecognitionTimer();
   const extracted = await timer.measure("sourceAdapterMs", async () => {
-    const rawText = await fetchRawContent(target.documentId, accessToken);
+    const rawText = await fetchRawContent(target, accessToken);
     return buildExtractedContent(item, target, rawText);
   });
   const enrichment = await timer.measure("contentSignalsMs", () => enrichContent(extracted));
@@ -222,8 +240,12 @@ async function importFeishuRawContentItem({
   };
 }
 
-async function fetchRawContent(documentId: string, accessToken: string): Promise<string> {
-  const response = await fetch(`${rawContentUrlBase}/${documentId}/raw_content?lang=0`, {
+async function fetchRawContent(target: FeishuDocumentTarget, accessToken: string): Promise<string> {
+  const url =
+    target.type === "docx"
+      ? `${docxRawContentUrlBase}/${target.token}/raw_content?lang=0`
+      : `${legacyDocRawContentUrlBase}/${target.token}/raw_content`;
+  const response = await fetch(url, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json; charset=utf-8"
@@ -286,7 +308,7 @@ function buildExtractedContent(item: LibraryItem, target: FeishuDocumentTarget, 
   const quality = decideContentQuality([{ source: "connector", text: rawText }]);
   const readableText = quality.readableText || rawText;
   const title = target.title ?? inferTitle(readableText, item.title);
-  const sourceLabel = target.source === "wiki_node" ? "resolved Feishu wiki document" : "Feishu document";
+  const sourceLabel = documentSourceLabel(target);
 
   return {
     url: normalizedUrl,
@@ -304,8 +326,21 @@ function buildExtractedContent(item: LibraryItem, target: FeishuDocumentTarget, 
     captureMethod: "connector",
     extractor: "feishu_raw_content",
     sourceAccess: "requires_auth",
-    sourceMessage: `Imported ${sourceLabel} ${target.documentId} through the authorized connector.`
+    sourceMessage: `Imported ${sourceLabel} ${target.token} through the authorized connector.`
   };
+}
+
+function documentTargetTypeForWikiObject(objType: string): FeishuDocumentTarget["type"] | undefined {
+  if (objType === "docx") return "docx";
+  if (objType === "doc") return "legacy_doc";
+  return undefined;
+}
+
+function documentSourceLabel(target: FeishuDocumentTarget): string {
+  if (target.source === "wiki_node") {
+    return target.type === "legacy_doc" ? "resolved Feishu wiki legacy document" : "resolved Feishu wiki document";
+  }
+  return target.type === "legacy_doc" ? "Feishu legacy document" : "Feishu document";
 }
 
 async function* listFeishuConnectorItems(repository: LibraryRepository): AsyncGenerator<LibraryItem> {

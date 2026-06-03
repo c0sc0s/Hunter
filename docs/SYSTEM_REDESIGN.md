@@ -107,7 +107,8 @@ Future connector behavior:
 - Use Feishu authorization. Done for OAuth authorization and encrypted token storage.
 - Refresh expired access tokens before sync. Done for manual connector sync.
 - Read document raw content from official APIs. Done for direct `/docx/{document_id}` URLs.
-- Resolve wiki indirection before import. Done for wiki nodes that resolve to docx.
+- Read legacy document raw content from official APIs. Done for direct `/docs/{docToken}` URLs.
+- Resolve wiki indirection before import. Done for wiki nodes that resolve to docx or legacy doc.
 - Read document blocks from official APIs.
 - Convert blocks into Huntter canonical content.
 - Import images, attachments, titles, authors, and permissions where allowed.
@@ -143,11 +144,12 @@ Implemented now:
 - Feishu OAuth authorization start/callback, PKCE state handling, account label lookup, and encrypted local token storage.
 - Feishu access-token refresh before manual connector sync.
 - Feishu direct docx raw-content import for saved URL-only connector-needed items.
-- Feishu wiki node resolution for saved wiki URLs that resolve to docx.
+- Feishu legacy doc raw-content import for saved URL-only connector-needed items.
+- Feishu wiki node resolution for saved wiki URLs that resolve to docx or legacy doc.
 
 Not implemented yet:
 
-- Feishu non-docx wiki import.
+- Feishu non-document wiki import.
 - Permission refresh.
 - Full source-specific block rendering.
 - Background sync/import for connected sources.

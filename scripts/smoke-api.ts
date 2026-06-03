@@ -361,6 +361,169 @@ try {
   );
   assert.equal(JSON.stringify(feishuWikiImportEvents).includes(importedWikiFeishuText), false);
 
+  const directLegacyFeishuDocUrl = "https://bytedance.larkoffice.com/docs/doccnLegacyDirectToken1234";
+  const directLegacyFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
+    url: directLegacyFeishuDocUrl,
+    tags: ["connector-sync", "legacy-doc"]
+  });
+  assert.equal(directLegacyFeishu.enrichmentState, "processing");
+
+  const wikiLegacyFeishuDocUrl = "https://bytedance.larkoffice.com/wiki/WikiNodeTokenForLegacyDoc123";
+  const wikiLegacyFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
+    url: wikiLegacyFeishuDocUrl,
+    tags: ["connector-sync", "legacy-doc", "wiki"]
+  });
+  assert.equal(wikiLegacyFeishu.enrichmentState, "processing");
+
+  const connectorNeededDirectLegacyFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    requiredConnector?: string;
+    captureInput?: unknown;
+  }>(directLegacyFeishu.id, "needs_connector");
+  assert.equal(connectorNeededDirectLegacyFeishu.requiredConnector, "feishu");
+  assert.equal("captureInput" in connectorNeededDirectLegacyFeishu, false);
+
+  const connectorNeededWikiLegacyFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    requiredConnector?: string;
+    captureInput?: unknown;
+  }>(wikiLegacyFeishu.id, "needs_connector");
+  assert.equal(connectorNeededWikiLegacyFeishu.requiredConnector, "feishu");
+  assert.equal("captureInput" in connectorNeededWikiLegacyFeishu, false);
+
+  const directLegacyDocToken = "doccnLegacyDirectToken1234";
+  const resolvedWikiLegacyDocToken = "doccnWikiLegacyToken12345";
+  const importedDirectLegacyFeishuText = Array.from(
+    { length: 8 },
+    (_, index) => `Feishu legacy direct document paragraph ${index + 1} proves old docs URLs import through doc v2 raw content.`
+  ).join(" ");
+  const importedWikiLegacyFeishuText = Array.from(
+    { length: 8 },
+    (_, index) =>
+      `Feishu legacy wiki document paragraph ${index + 1} proves wiki nodes resolving to old docs import through doc v2 raw content.`
+  ).join(" ");
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+    const parsedUrl = new URL(requestUrl);
+
+    if (
+      parsedUrl.origin === "https://open.feishu.cn" &&
+      parsedUrl.pathname === "/open-apis/wiki/v2/spaces/get_node" &&
+      parsedUrl.searchParams.get("token") === "WikiNodeTokenForLegacyDoc123"
+    ) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
+      return jsonResponse({
+        code: 0,
+        data: {
+          node: {
+            obj_token: resolvedWikiLegacyDocToken,
+            obj_type: "doc",
+            title: "Resolved Legacy Wiki Doc"
+          }
+        }
+      });
+    }
+
+    if (requestUrl === `https://open.feishu.cn/open-apis/doc/v2/${directLegacyDocToken}/raw_content`) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
+      return jsonResponse({ code: 0, data: { content: importedDirectLegacyFeishuText } });
+    }
+
+    if (requestUrl === `https://open.feishu.cn/open-apis/doc/v2/${resolvedWikiLegacyDocToken}/raw_content`) {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
+      return jsonResponse({ code: 0, data: { content: importedWikiLegacyFeishuText } });
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const feishuLegacyImportSync = await postJson<{
+      connector: { provider: string; connectionState: string; lastSyncAt?: string };
+      imported: number;
+      skipped: number;
+      failed: number;
+      message?: string;
+    }>("/api/connectors/feishu/sync", undefined, 200);
+    assert.equal(feishuLegacyImportSync.connector.provider, "feishu");
+    assert.equal(feishuLegacyImportSync.connector.connectionState, "connected");
+    assert.match(feishuLegacyImportSync.connector.lastSyncAt ?? "", /^20/);
+    assert.equal(feishuLegacyImportSync.imported, 2);
+    assert.equal(feishuLegacyImportSync.skipped, 0);
+    assert.equal(feishuLegacyImportSync.failed, 0);
+    assert.match(feishuLegacyImportSync.message ?? "", /imported 2/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const importedDirectLegacyFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    captureMethod?: string;
+    sourceAccess?: string;
+    sourceMessage?: string;
+    requiredConnector?: string;
+    readableText?: string;
+    contentHtml?: string;
+    contentHash?: string;
+    captureInput?: unknown;
+  }>(directLegacyFeishu.id, "ready");
+  assert.equal(importedDirectLegacyFeishu.captureMethod, "connector");
+  assert.equal(importedDirectLegacyFeishu.sourceAccess, "requires_auth");
+  assert.match(importedDirectLegacyFeishu.sourceMessage ?? "", /Feishu legacy document/i);
+  assert.equal(importedDirectLegacyFeishu.requiredConnector, undefined);
+  assert.match(importedDirectLegacyFeishu.readableText ?? "", /old docs URLs import through doc v2 raw content/);
+  assert.match(importedDirectLegacyFeishu.contentHtml ?? "", /old docs URLs import through doc v2 raw content/);
+  assert.match(importedDirectLegacyFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
+  assert.equal("captureInput" in importedDirectLegacyFeishu, false);
+
+  const importedWikiLegacyFeishu = await waitForItem<{
+    id: string;
+    title: string;
+    enrichmentState: string;
+    captureMethod?: string;
+    sourceAccess?: string;
+    sourceMessage?: string;
+    requiredConnector?: string;
+    readableText?: string;
+    contentHtml?: string;
+    contentHash?: string;
+    captureInput?: unknown;
+  }>(wikiLegacyFeishu.id, "ready");
+  assert.equal(importedWikiLegacyFeishu.title, "Resolved Legacy Wiki Doc");
+  assert.equal(importedWikiLegacyFeishu.captureMethod, "connector");
+  assert.equal(importedWikiLegacyFeishu.sourceAccess, "requires_auth");
+  assert.match(importedWikiLegacyFeishu.sourceMessage ?? "", /resolved Feishu wiki legacy document/i);
+  assert.equal(importedWikiLegacyFeishu.requiredConnector, undefined);
+  assert.match(importedWikiLegacyFeishu.readableText ?? "", /wiki nodes resolving to old docs import/);
+  assert.match(importedWikiLegacyFeishu.contentHtml ?? "", /wiki nodes resolving to old docs import/);
+  assert.match(importedWikiLegacyFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
+  assert.equal("captureInput" in importedWikiLegacyFeishu, false);
+
+  const feishuLegacyImportEvents = await getJson<{
+    events: Array<{
+      itemId?: string;
+      captureMethod: string;
+      snapshotBytes: number;
+      resultState: string;
+    }>;
+  }>("/api/capture-events?limit=60");
+  for (const importedItemId of [directLegacyFeishu.id, wikiLegacyFeishu.id]) {
+    assert.ok(
+      feishuLegacyImportEvents.events.some(
+        (event) =>
+          event.itemId === importedItemId &&
+          event.captureMethod === "connector" &&
+          event.snapshotBytes === 0 &&
+          event.resultState === "ready"
+      )
+    );
+  }
+  assert.equal(JSON.stringify(feishuLegacyImportEvents).includes(importedDirectLegacyFeishuText), false);
+  assert.equal(JSON.stringify(feishuLegacyImportEvents).includes(importedWikiLegacyFeishuText), false);
+
   const disconnectedFeishuConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
     "/api/connectors/feishu"
   );

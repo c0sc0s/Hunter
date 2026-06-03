@@ -107,7 +107,7 @@ type CaptureEvent = {
 
 `GET /api/items` returns the current page, global library stats, and page metadata. JSON and SQLite adapters share the same query semantics; SQLite executes search through FTS.
 
-`GET /api/connectors` returns connector definitions plus stored connection state. `PATCH` records local connector state, `DELETE` clears mutable connector state and stored credentials, Feishu `POST /oauth/start` creates a short-lived OAuth state and PKCE authorization URL, and Feishu `/oauth/callback` exchanges the code for encrypted local credentials. Feishu `POST /sync` refreshes expired or near-expired Feishu access tokens before importing saved direct `/docx/{document_id}` items and `/wiki/{node_token}` pages that resolve to docx through the official raw-content API, replacing URL-only `needs_connector` recognition results with connector provenance. Unsupported providers still fail explicitly with `409` for disconnected providers or `501` when provider import is not implemented. Permissioned sources use this model to explain exactly which connector is required.
+`GET /api/connectors` returns connector definitions plus stored connection state. `PATCH` records local connector state, `DELETE` clears mutable connector state and stored credentials, Feishu `POST /oauth/start` creates a short-lived OAuth state and PKCE authorization URL, and Feishu `/oauth/callback` exchanges the code for encrypted local credentials. Feishu `POST /sync` refreshes expired or near-expired Feishu access tokens before importing saved direct `/docx/{document_id}` items, legacy `/docs/{docToken}` items, and `/wiki/{node_token}` pages that resolve to docx or legacy doc through the official raw-content APIs, replacing URL-only `needs_connector` recognition results with connector provenance. Unsupported providers still fail explicitly with `409` for disconnected providers or `501` when provider import is not implemented. Permissioned sources use this model to explain exactly which connector is required.
 
 `GET /api/capture-events` returns recent Capture Event diagnostics. Events include source URL, capture method, snapshot byte count, result state, timing, and error context, but never raw browser snapshot HTML or text.
 
@@ -143,7 +143,7 @@ The app now uses source adapters instead of one universal parser.
 - `server/sources/x.ts`: public X post resolution through bounded oEmbed, selected-text fallback, quality-gated browser snapshot fallback, and connector-required fallback.
 - `server/sources/feishu.ts`: Feishu URL detection, quality-gated browser snapshot capture, sanitized Canonical Content HTML, and connector-required fallback.
 - `server/connectorAuth/feishuOAuth.ts`: Feishu OAuth authorization URL generation, callback token exchange, account label lookup, encrypted credential persistence, and sync-time access-token refresh.
-- `server/connectorImport/feishuImport.ts`: Feishu direct docx URL and wiki-node-to-docx import through raw-content using encrypted connector credentials, replacing connector-required saved items and recording connector Capture Events.
+- `server/connectorImport/feishuImport.ts`: Feishu direct docx URL, legacy doc URL, and wiki-node-to-docx/doc import through raw-content using encrypted connector credentials, replacing connector-required saved items and recording connector Capture Events.
 - `server/connectorSecretBox.ts`: AES-GCM sealing for connector tokens before JSON or SQLite storage.
 - `server/sources/registry.ts`: adapter routing.
 

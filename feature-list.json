@@ -1346,7 +1346,7 @@
         "Record connector Capture Events without storing raw content in the event stream."
       ],
       "outOfScope": [
-        "Non-docx wiki object import",
+        "Legacy doc wiki object import",
         "Block-level rendering",
         "Image and attachment import",
         "Automatic token refresh",
@@ -1356,7 +1356,7 @@
       "definitionOfDone": [
         "`POST /api/connectors/feishu/sync` resolves saved wiki URL-only items to docx before raw-content import.",
         "Imported wiki-backed items use `captureMethod: connector` and `sourceAccess: requires_auth` without `requiredConnector`.",
-        "Non-docx wiki nodes are skipped rather than falsely imported.",
+        "Unsupported non-document wiki nodes are skipped rather than falsely imported.",
         "Capture Events record wiki connector import outcomes without raw content leakage.",
         "`pnpm smoke:api` covers OAuth scopes, saved wiki URL-only capture, wiki-node resolution, raw-content import, item replacement, and event privacy.",
         "`pnpm verify` passes with the Feishu wiki resolution slice included."
@@ -1393,7 +1393,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "mockBoundary": "Smoke coverage mocks Feishu wiki get_node and raw-content HTTP responses. The implementation uses the official endpoint shapes for wiki-node resolution and docx raw-content import, but does not import non-docx wiki objects, refresh expired tokens, import blocks/images/attachments, or schedule background sync.",
+          "mockBoundary": "Smoke coverage mocks Feishu wiki get_node and raw-content HTTP responses. The implementation uses the official endpoint shapes for wiki-node resolution and docx raw-content import, but does not import legacy doc wiki objects, refresh expired tokens, import blocks/images/attachments, or schedule background sync.",
           "notes": "Manual Feishu sync now scans saved Feishu connector-needed items, resolves wiki node tokens to docx object tokens when possible, imports the resolved docx raw content through the decrypted server-side user access token, uses the resolved node title, and records connector Capture Events without raw document text."
         }
       ],
@@ -1414,7 +1414,7 @@
       "outOfScope": [
         "Background sync scheduling",
         "Permission drift refresh",
-        "Non-docx wiki object import",
+        "Non-document wiki object import",
         "Block-level rendering",
         "Image and attachment import"
       ],
@@ -1458,8 +1458,73 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "mockBoundary": "Smoke coverage mocks the Feishu OAuth refresh, wiki get_node, and raw-content HTTP responses. The implementation refreshes tokens before manual sync, but does not schedule background sync, refresh permissions, import non-docx wiki objects, or import blocks/images/attachments.",
+          "mockBoundary": "Smoke coverage mocks the Feishu OAuth refresh, wiki get_node, and raw-content HTTP responses. The implementation refreshes tokens before manual sync, but does not schedule background sync, refresh permissions, import non-document wiki objects, or import blocks/images/attachments.",
           "notes": "Manual Feishu sync now asks the OAuth module for a fresh access token. Expired or near-expired stored access tokens are refreshed through the official OAuth token endpoint, new one-time refresh tokens replace old encrypted credentials, and provider imports continue with the refreshed access token."
+        }
+      ],
+      "next": "Add Feishu block/image/attachment import and permission refresh before broadening sync coverage."
+    },
+    {
+      "id": "feishu-legacy-doc-raw-content-sync",
+      "title": "Import Feishu legacy doc raw content on manual sync",
+      "status": "done",
+      "scope": [
+        "Extract direct legacy `/docs/{docToken}` and `/doc/{docToken}` tokens from saved Feishu URLs.",
+        "Resolve wiki nodes with `obj_type: doc` to legacy document tokens.",
+        "Fetch old document plain text through the official `doc/v2/:docToken/raw_content` API.",
+        "Reuse connector provenance, deterministic Content Signals, content hashing, recognition timing, and sanitized reader HTML.",
+        "Use the resolved wiki node title when Feishu returns one.",
+        "Record connector Capture Events without storing raw content in the event stream."
+      ],
+      "outOfScope": [
+        "Non-document wiki object import",
+        "Block-level rendering",
+        "Image and attachment import",
+        "Permission drift refresh",
+        "Background sync scheduling"
+      ],
+      "dependencies": ["feishu-token-refresh-before-sync", "feishu-wiki-docx-resolution"],
+      "definitionOfDone": [
+        "`POST /api/connectors/feishu/sync` imports direct legacy docs URL-only items through `doc/v2/:docToken/raw_content`.",
+        "`POST /api/connectors/feishu/sync` resolves wiki `doc` nodes to legacy docs before raw-content import.",
+        "Imported legacy docs use `captureMethod: connector` and `sourceAccess: requires_auth` without `requiredConnector`.",
+        "Capture Events record legacy doc connector import outcomes without raw content leakage.",
+        "`pnpm smoke:api` covers direct legacy docs, wiki-to-legacy-doc resolution, raw-content import, item replacement, and event privacy.",
+        "`pnpm verify` passes with the Feishu legacy doc sync slice included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Saved direct legacy docs and wiki nodes resolving to old doc objects can move from `needs_connector` to connector-imported `ready` content with mocked Feishu doc v2 raw-content responses."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The expanded docx/legacy-doc target model compiles cleanly."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Legacy doc raw-content sync remains compatible with the full local gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/connectorImport/feishuImport.ts",
+            "server/connectors.ts",
+            "scripts/smoke-api.ts",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "docs/DATABASE_DESIGN.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Smoke coverage mocks Feishu wiki get_node and doc v2 raw-content HTTP responses. The implementation imports old doc plain text, but does not import non-document wiki objects, block structures, images, attachments, permission changes, or background sync.",
+          "notes": "Manual Feishu sync now recognizes legacy docs URLs and wiki nodes resolving to `doc`, fetches old document raw text through the official doc v2 endpoint, rebuilds saved items with connector provenance, and keeps raw document text out of Capture Events."
         }
       ],
       "next": "Add Feishu block/image/attachment import and permission refresh before broadening sync coverage."
