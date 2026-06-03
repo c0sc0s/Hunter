@@ -8,37 +8,54 @@
   </head>
   <body>
     <main class="popup">
-      <header>
-        <div class="mark">H</div>
+      <header class="app-header">
+        <div class="mark">H_</div>
         <div>
           <h1>Huntter</h1>
-          <p id="pageHost">Current page</p>
+          <p>Save current page</p>
         </div>
       </header>
 
-      <section class="page-card">
-        <div id="cover" class="cover"></div>
-        <h2 id="pageTitle">Loading</h2>
-        <p id="pageUrl"></p>
+      <section class="card page-card">
+        <div id="cover" class="cover">
+          <span class="cover-mark">H</span>
+        </div>
+        <div class="page-body">
+          <div class="page-meta">
+            <span id="pageHost" class="source-chip">Current page</span>
+          </div>
+          <h2 id="pageTitle">Loading</h2>
+          <p id="pageUrl"></p>
+        </div>
       </section>
 
-      <label>
-        <span>Tags</span>
-        <input id="tags" placeholder="ai, product" />
-      </label>
+      <section class="card form-card" aria-label="Save metadata">
+        <label class="field">
+          <span>Tags</span>
+          <input id="tags" autocomplete="off" placeholder="ai, product" />
+        </label>
 
-      <label>
-        <span>Note</span>
-        <textarea id="note" placeholder="why this matters"></textarea>
-      </label>
+        <label class="field">
+          <span>Note</span>
+          <textarea id="note" placeholder="why this matters"></textarea>
+        </label>
+      </section>
 
-      <details>
-        <summary>API</summary>
-        <input id="apiBase" />
+      <details class="card api-card">
+        <summary>
+          <span>API endpoint</span>
+          <small>Local Huntter server</small>
+        </summary>
+        <label class="field api-field">
+          <span>Base URL</span>
+          <input id="apiBase" autocomplete="off" spellcheck="false" />
+        </label>
       </details>
 
-      <button id="saveButton" type="button">Save</button>
-      <p id="status" role="status"></p>
+      <footer class="actions">
+        <button id="saveButton" type="button">Save</button>
+        <p id="status" role="status" aria-live="polite"></p>
+      </footer>
     </main>
     <script src="src/popup.js"></script>
   </body>

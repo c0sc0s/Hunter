@@ -29,7 +29,7 @@ apiBaseInput.addEventListener("change", () => {
 
 saveButton.addEventListener("click", async () => {
   saveButton.disabled = true;
-  statusText.textContent = "Saving";
+  setStatus("Saving", "saving");
 
   try {
     const apiBase = apiBaseInput.value.trim() || defaultApiBase;
@@ -42,9 +42,9 @@ saveButton.addEventListener("click", async () => {
     });
 
     if (!result?.ok) throw new Error(result?.error || "Could not save page");
-    statusText.textContent = "Saved. Click Reload in Huntter.";
+    setStatus("Saved. Click Reload in Huntter.", "success");
   } catch (error) {
-    statusText.textContent = error.message;
+    setStatus(error.message, "error");
   } finally {
     saveButton.disabled = false;
   }
@@ -65,6 +65,8 @@ function renderCurrentTab(tab) {
     pageHost.textContent = "No page selected";
     pageTitle.textContent = "Open a page to save";
     pageUrl.textContent = "";
+    cover.style.backgroundImage = "";
+    cover.classList.remove("has-cover");
     saveButton.disabled = true;
     return;
   }
@@ -76,7 +78,17 @@ function renderCurrentTab(tab) {
   saveButton.disabled = false;
   if (tab.favIconUrl) {
     cover.style.backgroundImage = `url(${tab.favIconUrl})`;
+    cover.classList.add("has-cover");
+  } else {
+    cover.style.backgroundImage = "";
+    cover.classList.remove("has-cover");
   }
+}
+
+function setStatus(message, state = "") {
+  statusText.textContent = message;
+  if (state) statusText.dataset.state = state;
+  else delete statusText.dataset.state;
 }
 
 function safeHost(value) {
