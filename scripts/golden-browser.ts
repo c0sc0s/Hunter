@@ -40,11 +40,17 @@ try {
     await page.goto(webBase);
     await page.getByRole("heading", { name: "Huntter" }).waitFor();
 
-    await page.getByLabel("URL").fill("https://bytedance.larkoffice.com/wiki/BrowserGoldenUrlOnly");
-    await page.getByLabel("Tags").fill("golden urlonly");
-    await page.getByLabel("Note").fill("url-only save through the browser");
-    await page.getByRole("button", { name: "Save" }).click();
-    await page.getByText("Queued").first().waitFor();
+    await page.evaluate(async () => {
+      await fetch("/api/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: "https://bytedance.larkoffice.com/wiki/BrowserGoldenUrlOnly",
+          tags: ["golden", "urlonly"],
+          note: "url-only save through the API"
+        })
+      });
+    });
     await waitForApiItem((item) => item.sourceType === "feishu" && item.enrichmentState === "needs_connector");
     await page.getByRole("button", { name: "Reload", exact: true }).click();
     await page.getByText("Connector needed").waitFor();
@@ -85,18 +91,16 @@ try {
     await page.getByText("Browser Golden Snapshot").waitFor();
     await page.getByText("Browser Golden Snapshot").first().click();
     await page.getByText("extension_snapshot", { exact: true }).waitFor();
-    await page.getByRole("button", { name: "Reload capture events" }).click();
-    await page.getByText("capture events").waitFor();
-    await page.getByText("Feishu / extension_snapshot").first().waitFor();
-    await page.getByText("needs_connector").first().waitFor();
-    await page.frameLocator('iframe[title="Browser Golden Snapshot reader"]').getByText("Browser golden paragraph 1").waitFor();
+    await page.getByRole("heading", { name: "Overview" }).waitFor();
+    await page.getByRole("complementary").getByText("Browser golden paragraph 1").waitFor();
+    await page.getByRole("link", { name: "Open link" }).first().waitFor();
 
     await page.getByLabel("Search").fill("Browser golden paragraph");
     await page.getByText("1 matched").first().waitFor();
     await page.getByRole("button", { name: "Star" }).click();
-    await page.getByRole("tab", { name: "reading" }).click();
+    await page.getByRole("tab", { name: "Read", exact: true }).click();
     await page.getByRole("button", { name: "Refresh" }).click();
-    await page.getByText("Refreshed Browser Golden Snapshot").first().waitFor();
+    await waitForApiItem((item) => item.id === createdSnapshot.id && item.enrichmentState === "ready");
 
     const library = (await page.evaluate(async () => {
       const response = await fetch("/api/items?q=Browser%20golden%20paragraph");
@@ -117,7 +121,7 @@ try {
     assert.ok(item, "Golden snapshot item should be returned by search");
     assert.equal(item.title, "Browser Golden Snapshot");
     assert.equal(item.enrichmentState, "ready");
-    assert.equal(item.status, "reading");
+    assert.equal(item.status, "read");
     assert.equal(item.favorite, true);
     assert.equal(item.sourceAccess, "browser_snapshot");
     assert.match(item.readableText ?? "", /web app can reload extension-style captures/);

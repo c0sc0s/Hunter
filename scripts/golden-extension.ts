@@ -139,9 +139,9 @@ try {
   await appPage.getByText(fixtureTitle).first().waitFor();
   await appPage.getByText(fixtureTitle).first().click();
   await appPage.getByText("extension_snapshot", { exact: true }).first().waitFor();
-  await appPage.getByRole("button", { name: "Reload capture events" }).click();
-  await appPage.getByText("Article / extension_snapshot").first().waitFor();
-  await appPage.frameLocator(`iframe[title="${fixtureTitle} reader"]`).getByText("loaded Chrome extension can capture").waitFor();
+  await appPage.getByRole("heading", { name: "Overview" }).waitFor();
+  await appPage.getByRole("complementary").getByText("loaded Chrome extension can capture").waitFor();
+  await appPage.getByRole("link", { name: "Open link" }).first().waitFor();
 
   const popupFixturePage = await context.newPage();
   await popupFixturePage.goto(popupFixtureUrl);
@@ -180,7 +180,8 @@ try {
   await appPage.getByRole("button", { name: "Reload", exact: true }).click();
   await appPage.getByText(popupFixtureTitle).first().waitFor();
   await appPage.getByText(popupFixtureTitle).first().click();
-  await appPage.frameLocator(`iframe[title="${popupFixtureTitle} reader"]`).getByText("visible extension save button").waitFor();
+  await appPage.getByRole("heading", { name: "Overview" }).waitFor();
+  await appPage.getByRole("complementary").getByText("visible extension save button").waitFor();
 
   console.log("extension golden journey passed");
 } finally {

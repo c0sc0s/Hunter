@@ -78,17 +78,14 @@ async function exerciseDesktop(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Reload", exact: true }).click();
   await page.getByText(articleTitle).first().waitFor();
   await page.getByText(articleTitle).first().click();
-  await page.getByText("capture events").waitFor();
   await page.getByText("extension_snapshot", { exact: true }).first().waitFor();
-  await page.getByRole("button", { name: "Reload capture events" }).click();
-  await page.getByText("Article / extension_snapshot").first().waitFor();
-  await page.getByText("needs_connector").first().waitFor();
-  await page.frameLocator(`iframe[title="${articleTitle} reader"]`).getByText("Visual contract paragraph 1").waitFor();
+  await page.getByRole("heading", { name: "Overview" }).waitFor();
+  await page.getByRole("complementary").getByText("Visual contract paragraph 1").waitFor();
 
-  await assertVisible(page.getByRole("button", { name: "Save", exact: true }), "desktop Save button");
   await assertVisible(page.getByRole("button", { name: "Reload", exact: true }), "desktop Reload button");
   await assertVisible(page.getByRole("button", { name: "Connect Feishu / Lark", exact: true }), "desktop Feishu connector connect");
   await assertVisible(page.getByRole("button", { name: "Connect X", exact: true }), "desktop X connector connect");
+  await assertVisible(page.getByRole("link", { name: "Open link" }).first(), "desktop open link");
   await assertVisible(page.getByLabel("Search"), "desktop Search input");
   await assertNoHorizontalOverflow(page, "desktop");
   await assertScreenshot(page, "desktop-library.png", { minBytes: 60_000, width: 1440, height: 1000 });
@@ -105,9 +102,10 @@ async function exerciseMobile(page: Page): Promise<void> {
   await page.getByText(articleTitle).first().click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
-  await page.getByRole("heading", { name: "Reader" }).last().waitFor();
-  await waitForReaderText(dialog.locator(`iframe[title="${articleTitle} reader"]`), "Visual contract paragraph 1");
-  await assertVisible(page.getByRole("tab", { name: "unread" }), "mobile unread tab");
+  await page.getByRole("heading", { name: "Overview" }).last().waitFor();
+  await dialog.getByText("Visual contract paragraph 1").waitFor();
+  await assertVisible(page.getByRole("tab", { name: "Unread" }), "mobile unread tab");
+  await assertVisible(page.getByRole("tab", { name: "Read", exact: true }), "mobile read tab");
   await assertNoHorizontalOverflow(page, "mobile detail");
   await assertScreenshot(page, "mobile-detail.png", { minBytes: 35_000, width: 390, height: 844 });
 }
@@ -131,7 +129,7 @@ async function seedLibrary(): Promise<void> {
       siteName: "Visual Review",
       textContent: articleText,
       excerpt: "A deterministic article for Huntter visual contract coverage.",
-      html: `<!doctype html><html><head><title>${articleTitle}</title><meta property="og:title" content="${articleTitle}" /><meta name="description" content="A deterministic article for Huntter visual contract coverage." /></head><body><main><article><h1>${articleTitle}</h1><p>${articleText}</p><blockquote>Reader content should remain readable in the sandboxed detail frame.</blockquote></article></main></body></html>`
+      html: `<!doctype html><html><head><title>${articleTitle}</title><meta property="og:title" content="${articleTitle}" /><meta name="description" content="A deterministic article for Huntter visual contract coverage." /></head><body><main><article><h1>${articleTitle}</h1><p>${articleText}</p><blockquote>Overview content should remain readable in the simplified detail panel.</blockquote></article></main></body></html>`
     }
   });
   await waitForApiItem((item) => item.id === articleItem.id && item.enrichmentState === "ready");
@@ -162,14 +160,6 @@ async function assertVisible(locator: Locator, label: string): Promise<void> {
     });
   });
   assert.ok(visibleRatio >= 0.95, `${label} should not be clipped`);
-}
-
-async function waitForReaderText(frameLocator: Locator, text: string): Promise<void> {
-  const element = await frameLocator.elementHandle();
-  assert.ok(element, "Reader iframe should exist");
-  const frame = await element.contentFrame();
-  assert.ok(frame, "Reader iframe should have a content frame");
-  await frame.getByText(text).waitFor();
 }
 
 async function assertNoHorizontalOverflow(page: Page, label: string): Promise<void> {
