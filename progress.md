@@ -9,6 +9,9 @@ Last updated: 2026-06-03
 - Source adapters currently cover generic web pages, X URLs, and Feishu/Lark URLs.
 - Repository behavior is abstracted behind JSON and SQLite adapters.
 - Feishu/X permissioned-source failures carry `requiredConnector` and render against connector state.
+- Connector state can now be updated or cleared through the API, while connector sync requests fail explicitly until real provider handlers exist.
+- The web sidebar now exposes manual connector Sync and Disconnect controls, and planned availability no longer hides local connection state.
+- The desktop sidebar is scrollable with non-shrinking operational panels so Capture and connector controls are not clipped.
 - Feishu browser snapshots now use the content quality gate, producing `ready` for substantial visible content and `partial` for limited visible content.
 - X captures now use bounded oEmbed, selected-text fallback, and browser-snapshot fallback before requiring a future X connector.
 - The web client uses manual Reload; it does not poll for background recognition.
@@ -84,6 +87,10 @@ Last updated: 2026-06-03
 - Latest run added `pnpm golden:extension` for installed Manifest V3 capture through the real extension background path, Web manual Reload, Capture Events, no public `captureInput`, and no raw snapshot text in event responses.
 - Latest run extended `pnpm golden:extension` to click the visible popup Save button and verify tags, note, reader content, and browser-snapshot provenance.
 - Latest run extended `pnpm golden:extension` to invoke `chrome.action.openPopup()` from the service worker before the observable popup Save flow.
+- Latest run added connector state control APIs for patch, disconnect, and explicit unsupported sync responses.
+- Latest run expanded `pnpm smoke:api` to cover connector state updates, single-connector reads, disconnected sync failure, planned sync failure, and disconnect behavior.
+- Latest run tightened `pnpm golden:visual` visible-control checks with IntersectionObserver clipping checks for desktop Capture and connector controls.
+- Latest run refreshed `win32-x64` visual baselines after the connector sidebar and unclipped Capture panel layout change.
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
@@ -93,10 +100,10 @@ Last updated: 2026-06-03
 
 ## Open Gaps
 
-- Feishu and X connectors are not implemented.
+- Feishu and X OAuth/import connectors are not implemented; only local connector state control and explicit unsupported sync responses exist.
 - Native Chrome toolbar bubble target inspection is still not executable through Playwright in this workspace; the toolbar action popup API itself is now smoke-tested.
 - `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, explore CDP target inspection for native toolbar bubble screenshots, or start the first connector-specific implementation slice.
+All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, explore CDP target inspection for native toolbar bubble screenshots, or start the first real connector implementation slice with OAuth/token-storage requirements.

@@ -1,4 +1,4 @@
-import type { ConnectorDefinition, ConnectorProvider, ConnectorRecord, ConnectorView } from "../shared/types";
+import type { ConnectorDefinition, ConnectorProvider, ConnectorRecord, ConnectorUpdateInput, ConnectorView } from "../shared/types";
 
 export const connectorDefinitions: ConnectorDefinition[] = [
   {
@@ -40,4 +40,42 @@ export function listConnectorViews(records: ConnectorRecord[]): ConnectorView[] 
 
 export function isConnectorProvider(value: string): value is ConnectorProvider {
   return connectorDefinitions.some((definition) => definition.provider === value);
+}
+
+export function getConnectorDefinition(provider: ConnectorProvider): ConnectorDefinition {
+  const definition = connectorDefinitions.find((candidate) => candidate.provider === provider);
+  if (!definition) {
+    throw new Error(`Unknown connector provider: ${provider}`);
+  }
+  return definition;
+}
+
+export function buildConnectorRecord(provider: ConnectorProvider, input: ConnectorUpdateInput, previous?: ConnectorView): ConnectorRecord {
+  const now = new Date().toISOString();
+  const connectionState = input.connectionState ?? previous?.connectionState ?? "not_connected";
+  const isDisconnected = connectionState === "not_connected";
+  const isConnected = connectionState === "connected";
+
+  return {
+    provider,
+    connectionState,
+    accountLabel: isDisconnected ? undefined : cleanOptional(input.accountLabel ?? previous?.accountLabel),
+    connectedAt: isConnected ? (previous?.connectedAt ?? now) : undefined,
+    lastSyncAt: isDisconnected ? undefined : (input.lastSyncAt ?? previous?.lastSyncAt),
+    lastError: isConnected || isDisconnected ? cleanOptional(input.lastError) : cleanOptional(input.lastError ?? previous?.lastError),
+    updatedAt: now
+  };
+}
+
+export function buildDisconnectedConnectorRecord(provider: ConnectorProvider): ConnectorRecord {
+  return {
+    provider,
+    connectionState: "not_connected",
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function cleanOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }

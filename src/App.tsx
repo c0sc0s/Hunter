@@ -21,7 +21,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type {
   CaptureEvent,
   CaptureEventsResponse,
+  ConnectorMutationResponse,
   ConnectorProvider,
+  ConnectorSyncResponse,
   ConnectorView,
   ConnectorsResponse,
   ItemStatus,
@@ -121,6 +123,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingCaptureEvents, setLoadingCaptureEvents] = useState(false);
+  const [connectorAction, setConnectorAction] = useState<ConnectorProvider | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -341,6 +344,40 @@ export function App() {
     await loadCaptureEvents();
   }
 
+  async function syncConnector(provider: ConnectorProvider) {
+    setConnectorAction(provider);
+    try {
+      const response = await fetch(`/api/connectors/${provider}/sync`, { method: "POST" });
+      const body = (await response.json()) as ConnectorSyncResponse;
+      if (!response.ok) {
+        pushActivity("system", body.error);
+        return;
+      }
+
+      pushActivity("system", `Synced ${body.connector.label}.`);
+    } catch (syncError) {
+      pushActivity("system", syncError instanceof Error ? syncError.message : "Could not sync connector");
+    } finally {
+      setConnectorAction(null);
+      await loadConnectors();
+    }
+  }
+
+  async function disconnectConnector(provider: ConnectorProvider) {
+    setConnectorAction(provider);
+    try {
+      const response = await fetch(`/api/connectors/${provider}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(`Could not disconnect connector: HTTP ${response.status}`);
+      const body = (await response.json()) as ConnectorMutationResponse;
+      pushActivity("system", `Disconnected ${body.connector.label}.`);
+    } catch (disconnectError) {
+      pushActivity("system", disconnectError instanceof Error ? disconnectError.message : "Could not disconnect connector");
+    } finally {
+      setConnectorAction(null);
+      await loadConnectors();
+    }
+  }
+
   function runCommand(event: FormEvent) {
     event.preventDefault();
     const raw = commandValue.trim();
@@ -450,7 +487,7 @@ export function App() {
   return (
     <TooltipProvider>
       <main className="dark grid min-h-screen bg-[#141413] text-foreground lg:grid-cols-[292px_minmax(0,1fr)_430px]">
-        <aside className="border-border/70 bg-background p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-r">
+        <aside className="border-border/70 bg-background p-4 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:overflow-y-auto lg:border-r">
           <div className="mb-5 flex items-center gap-3">
             <div className="grid size-10 place-items-center rounded-md border bg-muted font-mono text-sm font-semibold text-primary">
               H_
@@ -472,7 +509,7 @@ export function App() {
             onUrlChange={setUrl}
           />
 
-          <nav className="mt-5 grid gap-1" aria-label="Library filters">
+          <nav className="mt-5 grid shrink-0 gap-1" aria-label="Library filters">
             {filters.map((entry) => {
               const Icon = entry.icon;
               const count = countForFilter(stats, entry.key);
@@ -492,7 +529,7 @@ export function App() {
             })}
           </nav>
 
-          <div className="mt-4 rounded-md border bg-muted/30 p-3">
+          <div className="mt-4 shrink-0 rounded-md border bg-muted/30 p-3">
             <div className="mb-2 flex items-center gap-2 font-mono text-[11px] uppercase text-muted-foreground">
               <Sparkles className="size-3.5" />
               sources
@@ -518,18 +555,24 @@ export function App() {
             </div>
           </div>
 
-          <ConnectorsPanel className="mt-4" connectors={connectors} />
+          <ConnectorsPanel
+            actionProvider={connectorAction}
+            className="mt-4 shrink-0"
+            connectors={connectors}
+            onDisconnect={(provider) => void disconnectConnector(provider)}
+            onSync={(provider) => void syncConnector(provider)}
+          />
 
           <CaptureEventsPanel
-            className="mt-4"
+            className="mt-4 shrink-0"
             events={captureEvents}
             loading={loadingCaptureEvents}
             onReload={() => void loadCaptureEvents(true)}
           />
 
-          <ActivityLog className="mt-4 hidden lg:grid" entries={activity} />
+          <ActivityLog className="mt-4 hidden shrink-0 lg:grid" entries={activity} />
 
-          <div className="mt-5 grid grid-cols-2 gap-2 lg:mt-auto">
+          <div className="mt-5 grid shrink-0 grid-cols-2 gap-2 lg:mt-auto">
             <MetricCard label="Saved" value={stats.total} />
             <MetricCard label="Unread" value={stats.unread} />
           </div>
@@ -723,7 +766,7 @@ function CapturePanel({
   onUrlChange: (value: string) => void;
 }) {
   return (
-    <Card className="gap-3 border-dashed bg-muted/30 p-3" size="sm">
+    <Card className="shrink-0 gap-3 border-dashed bg-muted/30 p-3" size="sm">
       <div className="flex items-center gap-2 font-mono text-[11px] uppercase text-muted-foreground">
         <Plus className="size-3.5" />
         capture
@@ -795,7 +838,19 @@ function ActivityLog({ className, entries }: { className?: string; entries: Acti
   );
 }
 
-function ConnectorsPanel({ className, connectors }: { className?: string; connectors: ConnectorView[] }) {
+function ConnectorsPanel({
+  actionProvider,
+  className,
+  connectors,
+  onDisconnect,
+  onSync
+}: {
+  actionProvider: ConnectorProvider | null;
+  className?: string;
+  connectors: ConnectorView[];
+  onDisconnect: (provider: ConnectorProvider) => void;
+  onSync: (provider: ConnectorProvider) => void;
+}) {
   return (
     <Card className={cn("gap-3 p-3", className)} size="sm">
       <div className="flex items-center gap-2 font-mono text-[11px] uppercase text-muted-foreground">
@@ -803,14 +858,57 @@ function ConnectorsPanel({ className, connectors }: { className?: string; connec
         connectors
       </div>
       <div className="grid gap-2">
-        {connectors.map((connector) => (
-          <div key={connector.provider} className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm">{connector.label}</span>
-            <Badge variant={connector.connectionState === "connected" ? "default" : "outline"}>
-              {connector.availability === "planned" ? "planned" : connectionStateLabel(connector.connectionState)}
-            </Badge>
-          </div>
-        ))}
+        {connectors.map((connector) => {
+          const busy = actionProvider === connector.provider;
+          return (
+            <div key={connector.provider} className="grid gap-2 rounded-md border bg-background/50 p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="grid min-w-0 gap-1">
+                  <span className="truncate text-sm">{connector.label}</span>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant={connector.connectionState === "connected" ? "default" : "outline"}>
+                      {connectionStateLabel(connector.connectionState)}
+                    </Badge>
+                    {connector.availability === "planned" ? <Badge variant="secondary">planned</Badge> : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <IconTooltip label={`Sync ${connector.label}`}>
+                    <Button
+                      aria-label={`Sync ${connector.label}`}
+                      className="size-7"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                      onClick={() => onSync(connector.provider)}
+                      disabled={busy}
+                    >
+                      <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+                    </Button>
+                  </IconTooltip>
+                  {connector.connectionState !== "not_connected" ? (
+                    <IconTooltip label={`Disconnect ${connector.label}`}>
+                      <Button
+                        aria-label={`Disconnect ${connector.label}`}
+                        className="size-7"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => onDisconnect(connector.provider)}
+                        disabled={busy}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </IconTooltip>
+                  ) : null}
+                </div>
+              </div>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                {connector.lastError ?? connector.accountLabel ?? connector.lastSyncAt ?? connector.provider}
+              </span>
+            </div>
+          );
+        })}
         {!connectors.length ? <span className="text-xs text-muted-foreground">No connectors</span> : null}
       </div>
     </Card>

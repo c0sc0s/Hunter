@@ -99,10 +99,13 @@ type CaptureEvent = {
 - `GET /api/capture-events?limit=`
 - `GET /api/connectors`
 - `GET /api/connectors/:provider`
+- `PATCH /api/connectors/:provider`
+- `DELETE /api/connectors/:provider`
+- `POST /api/connectors/:provider/sync`
 
 `GET /api/items` returns the current page, global library stats, and page metadata. JSON and SQLite adapters share the same query semantics; SQLite executes search through FTS.
 
-`GET /api/connectors` returns connector definitions plus stored connection state. OAuth is not wired yet; permissioned sources use this model to explain exactly which connector is required.
+`GET /api/connectors` returns connector definitions plus stored connection state. `PATCH` records local connector state, `DELETE` clears mutable connector state, and `POST /sync` fails explicitly with `409` for disconnected providers or `501` for planned providers without a sync handler. OAuth is not wired yet; permissioned sources use this model to explain exactly which connector is required.
 
 `GET /api/capture-events` returns recent Capture Event diagnostics. Events include source URL, capture method, snapshot byte count, result state, timing, and error context, but never raw browser snapshot HTML or text.
 

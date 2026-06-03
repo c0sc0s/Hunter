@@ -1102,6 +1102,74 @@
         }
       ],
       "next": "Use CDP target inspection only if future Chromium tooling exposes native toolbar bubble targets reliably."
+    },
+    {
+      "id": "connector-state-control",
+      "title": "Control connector state without fake sync",
+      "status": "done",
+      "scope": [
+        "Add API mutations for connector state updates and disconnects.",
+        "Add a connector sync endpoint that fails explicitly for disconnected or planned providers.",
+        "Keep connector definitions separate from mutable connection state.",
+        "Expose manual connector Sync and Disconnect controls in the web sidebar.",
+        "Keep planned connector availability visible without hiding actual local connection state.",
+        "Prevent the desktop sidebar from clipping Capture, connector, and diagnostics controls."
+      ],
+      "outOfScope": [
+        "Feishu OAuth",
+        "X OAuth",
+        "Connector token storage",
+        "Provider-specific import or sync handlers",
+        "Background connector sync jobs"
+      ],
+      "dependencies": ["capture-feishu-url", "capture-x-url", "zero-warning-lint-gate", "platform-visual-baseline-diff"],
+      "definitionOfDone": [
+        "`PATCH /api/connectors/:provider` validates and stores local connector state.",
+        "`DELETE /api/connectors/:provider` clears mutable connector state.",
+        "`POST /api/connectors/:provider/sync` returns `409` or `501` instead of pretending sync succeeded.",
+        "`pnpm smoke:api` covers connector mutation, sync failure, and disconnect behavior.",
+        "`pnpm golden:visual` asserts connector controls and Capture controls are visible without clipping.",
+        "`pnpm verify` passes with the connector state control slice included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Connector state updates, single-connector reads, disconnected sync failure, planned sync failure, and disconnect behavior work through the API."
+        },
+        {
+          "command": "pnpm golden:visual",
+          "proves": "Desktop connector controls and Capture controls remain visible and unclipped after the sidebar UI change."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Connector control remains compatible with the full static, unit, API, browser, extension, visual, and build gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm lint", "pnpm format:check", "pnpm smoke:api", "pnpm golden:visual:update", "pnpm golden:visual", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/index.ts",
+            "server/connectors.ts",
+            "shared/types.ts",
+            "src/App.tsx",
+            "scripts/smoke-api.ts",
+            "scripts/golden-visual.ts",
+            "tests/visual-baselines/win32-x64/desktop-library.png",
+            "tests/visual-baselines/win32-x64/mobile-library.png",
+            "tests/visual-baselines/win32-x64/mobile-detail.png",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/DATABASE_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md"
+          ],
+          "mockBoundary": "Connector state is local application state only. The slice does not implement Feishu/X OAuth, token storage, provider API imports, or background connector sync.",
+          "notes": "The API can now update and clear connector state, and sync requests return explicit `409`/`501` responses when a provider is disconnected or still planned. The sidebar shows local connection state and planned availability separately, adds manual Sync/Disconnect controls, and uses scrollable non-shrinking sections so Capture and connector controls are not clipped."
+        }
+      ],
+      "next": "Implement the first real connector only after OAuth scopes, token storage, and provider-specific import semantics are specified."
     }
   ]
 }

@@ -136,11 +136,11 @@ Implemented now:
 - Opt-in SQLite adapter with indexes and FTS maintenance.
 - Server-side search, source filtering, and pagination for the library.
 - Durable recognition jobs for JSON and SQLite adapters.
-- Connector definitions, connector-state storage, and connector-state UI for JSON and SQLite adapters.
+- Connector definitions, connector-state storage, connector-state API mutations, explicit unsupported sync responses, and connector-state UI for JSON and SQLite adapters.
 
 Not implemented yet:
 
 - Feishu OAuth connector.
 - Full source-specific block rendering.
-- Background sync for connected sources.
+- Background sync/import for connected sources.
 - Connector auth token storage and OAuth migrations.

@@ -87,6 +87,8 @@ async function exerciseDesktop(page: Page): Promise<void> {
 
   await assertVisible(page.getByRole("button", { name: "Save", exact: true }), "desktop Save button");
   await assertVisible(page.getByRole("button", { name: "Reload", exact: true }), "desktop Reload button");
+  await assertVisible(page.getByRole("button", { name: "Sync Feishu / Lark", exact: true }), "desktop Feishu connector sync");
+  await assertVisible(page.getByRole("button", { name: "Sync X", exact: true }), "desktop X connector sync");
   await assertVisible(page.getByLabel("Search"), "desktop Search input");
   await assertNoHorizontalOverflow(page, "desktop");
   await assertScreenshot(page, "desktop-library.png", { minBytes: 60_000, width: 1440, height: 1000 });
@@ -150,6 +152,16 @@ async function assertVisible(locator: Locator, label: string): Promise<void> {
   assert.ok(box, `${label} should have a bounding box`);
   assert.ok(box.width > 8, `${label} should have visible width`);
   assert.ok(box.height > 8, `${label} should have visible height`);
+  const visibleRatio = await locator.evaluate(async (element) => {
+    return new Promise<number>((resolve) => {
+      const observer = new IntersectionObserver((entries) => {
+        resolve(entries[0]?.intersectionRatio ?? 0);
+        observer.disconnect();
+      });
+      observer.observe(element);
+    });
+  });
+  assert.ok(visibleRatio >= 0.95, `${label} should not be clipped`);
 }
 
 async function waitForReaderText(frameLocator: Locator, text: string): Promise<void> {

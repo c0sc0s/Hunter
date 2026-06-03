@@ -93,7 +93,7 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Connectors
 
-`GET /api/connectors` returns planned connector definitions and any stored connection state. OAuth is not implemented yet; the current product boundary is explicit: private Feishu/X content requires either a browser snapshot from the extension or a future connector.
+`GET /api/connectors` returns planned connector definitions and any stored connection state. `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it, and `POST /api/connectors/:provider/sync` returns an explicit unavailable/not-implemented error until a real connector exists. OAuth is not implemented yet; the current product boundary is explicit: private Feishu/X content requires either a browser snapshot from the extension or a future connector.
 
 ## Persistence
 

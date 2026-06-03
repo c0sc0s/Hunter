@@ -10,7 +10,7 @@
 ## Current Session
 
 - Goal: continue hardening Huntter into a commercial-grade, source-first content recognition system without AI dependency.
-- Completed features: all 25 harness slices are `done`, through `toolbar-action-popup-smoke`.
+- Completed features: all 26 harness slices are `done`, through `connector-state-control`.
 - Verification: `pnpm verify` passed on 2026-06-03.
 
 ## Handoff Notes
@@ -31,7 +31,9 @@
 - `pnpm verify` now includes ESLint and Prettier format checks before tests and golden journeys.
 - `pnpm lint` runs with `--max-warnings=0`; warning regressions now fail locally and in CI.
 - Browser-selected text and browser snapshot content produce sanitized Canonical Content HTML through `server/sources/contentHtml.ts`.
+- Connector state can be patched or disconnected through the API, and connector sync requests return explicit `409` or `501` responses until real provider handlers exist.
+- The web sidebar has manual connector Sync/Disconnect controls, separates local connection state from planned availability, and no longer clips Capture or connector controls.
 
 ## Next Action
 
-All current harness features are done. The next useful slice is generating and committing `linux-x64` visual baselines, exploring CDP target inspection for native toolbar bubble screenshots, or a connector-specific implementation.
+All current harness features are done. The next useful slice is generating and committing `linux-x64` visual baselines, exploring CDP target inspection for native toolbar bubble screenshots, or the first real connector implementation once OAuth scopes and token storage are specified.

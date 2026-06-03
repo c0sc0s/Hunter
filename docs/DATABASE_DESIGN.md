@@ -142,7 +142,7 @@ create table connectors (
 );
 ```
 
-Connector definitions live in application code so planned providers can appear in the UI before OAuth is implemented. The table stores only mutable connection state.
+Connector definitions live in application code so planned providers can appear in the UI before OAuth is implemented. The table stores only mutable connection state. API mutations update or clear this local state; connector sync requests remain explicit `409` or `501` failures until OAuth token storage and provider-specific sync handlers exist.
 
 ## Search
 

@@ -37,6 +37,49 @@ try {
   assert.equal(connectors.connectors[0]?.connectionState, "not_connected");
   assert.equal(connectors.connectors[0]?.availability, "planned");
 
+  const patchedFeishuConnector = await patchJson<{
+    connector: { provider: string; label: string; connectionState: string; accountLabel?: string; lastError?: string };
+  }>("/api/connectors/feishu", {
+    connectionState: "error",
+    accountLabel: "Docs Bot",
+    lastError: "missing document scope"
+  });
+  assert.equal(patchedFeishuConnector.connector.provider, "feishu");
+  assert.equal(patchedFeishuConnector.connector.label, "Feishu / Lark");
+  assert.equal(patchedFeishuConnector.connector.connectionState, "error");
+  assert.equal(patchedFeishuConnector.connector.accountLabel, "Docs Bot");
+  assert.equal(patchedFeishuConnector.connector.lastError, "missing document scope");
+
+  const feishuConnector = await getJson<{ provider: string; connectionState: string; lastError?: string }>("/api/connectors/feishu");
+  assert.equal(feishuConnector.connectionState, "error");
+  assert.equal(feishuConnector.lastError, "missing document scope");
+
+  const feishuSync = await postJson<{ reason: string; error: string }>("/api/connectors/feishu/sync", undefined, 409);
+  assert.equal(feishuSync.reason, "not_connected");
+  assert.match(feishuSync.error, /not connected/i);
+
+  const patchedXConnector = await patchJson<{
+    connector: { provider: string; connectionState: string; accountLabel?: string; connectedAt?: string };
+  }>("/api/connectors/x", {
+    connectionState: "connected",
+    accountLabel: "@huntter-test"
+  });
+  assert.equal(patchedXConnector.connector.provider, "x");
+  assert.equal(patchedXConnector.connector.connectionState, "connected");
+  assert.equal(patchedXConnector.connector.accountLabel, "@huntter-test");
+  assert.match(patchedXConnector.connector.connectedAt ?? "", /^20/);
+
+  const xSync = await postJson<{ reason: string; error: string }>("/api/connectors/x/sync", undefined, 501);
+  assert.equal(xSync.reason, "not_available");
+  assert.match(xSync.error, /not available yet/i);
+
+  const disconnectedXConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
+    "/api/connectors/x"
+  );
+  assert.equal(disconnectedXConnector.connector.provider, "x");
+  assert.equal(disconnectedXConnector.connector.connectionState, "not_connected");
+  assert.equal(disconnectedXConnector.connector.accountLabel, undefined);
+
   const created = await postJson<{
     id: string;
     sourceType: string;
@@ -270,6 +313,12 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
+  assert.equal(response.ok, true, `${path} returned HTTP ${response.status}`);
+  return (await response.json()) as T;
+}
+
+async function deleteJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, { method: "DELETE" });
   assert.equal(response.ok, true, `${path} returned HTTP ${response.status}`);
   return (await response.json()) as T;
 }

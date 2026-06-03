@@ -1,10 +1,19 @@
 import cors from "cors";
 import express from "express";
 import { z } from "zod";
-import type { CaptureEventsResponse, CreateItemInput, LibraryItem, UpdateItemInput } from "../shared/types";
+import type {
+  CaptureEventsResponse,
+  ConnectorMutationResponse,
+  ConnectorProvider,
+  ConnectorSyncResponse,
+  ConnectorUpdateInput,
+  CreateItemInput,
+  LibraryItem,
+  UpdateItemInput
+} from "../shared/types";
 import { buildCaptureEvent } from "./captureEvents";
 import { toRecognitionInput, toRefreshInput } from "./captureInput";
-import { isConnectorProvider } from "./connectors";
+import { buildConnectorRecord, buildDisconnectedConnectorRecord, getConnectorDefinition, isConnectorProvider } from "./connectors";
 import { listSourceAdapters } from "./extract";
 import { buildItem, buildQueuedItem } from "./itemBuilder";
 import { libraryRepository } from "./repository";
@@ -15,6 +24,7 @@ const port = Number(process.env.PORT ?? 4317);
 
 const sourceTypeSchema = z.enum(["article", "post", "tweet", "feishu", "video", "pdf", "other"]);
 const statusSchema = z.enum(["unread", "reading", "read", "archived"]);
+const connectorStateSchema = z.enum(["not_connected", "connected", "error", "disabled"]);
 
 const createItemSchema = z.object({
   url: z.string().url(),
@@ -58,6 +68,15 @@ const captureEventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
+const connectorUpdateSchema = z
+  .object({
+    connectionState: connectorStateSchema.optional(),
+    accountLabel: z.string().trim().min(1).max(120).optional(),
+    lastSyncAt: z.string().datetime().optional(),
+    lastError: z.string().trim().min(1).max(300).optional()
+  })
+  .strict();
+
 app.use(cors());
 app.use(express.json({ limit: "4mb" }));
 
@@ -79,13 +98,78 @@ app.get("/api/connectors", async (_request, response, next) => {
 
 app.get("/api/connectors/:provider", async (request, response, next) => {
   try {
-    if (!isConnectorProvider(request.params.provider)) {
-      response.status(404).json({ error: "Connector not found" });
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    response.json(await getConnectorView(provider));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/connectors/:provider", async (request, response, next) => {
+  try {
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    const input = connectorUpdateSchema.parse(request.body) satisfies ConnectorUpdateInput;
+    const previous = await getConnectorView(provider);
+    const record = buildConnectorRecord(provider, input, previous);
+    await libraryRepository.upsertConnector(record);
+
+    const body: ConnectorMutationResponse = { connector: await getConnectorView(provider) };
+    response.json(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/connectors/:provider", async (request, response, next) => {
+  try {
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    await libraryRepository.upsertConnector(buildDisconnectedConnectorRecord(provider));
+    const body: ConnectorMutationResponse = { connector: await getConnectorView(provider) };
+    response.json(body);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/connectors/:provider/sync", async (request, response, next) => {
+  try {
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    const connector = await getConnectorView(provider);
+    if (connector.connectionState !== "connected") {
+      const body: ConnectorSyncResponse = {
+        connector,
+        error: `${connector.label} is not connected.`,
+        reason: "not_connected"
+      };
+      response.status(409).json(body);
       return;
     }
 
-    const connectors = await libraryRepository.listConnectors();
-    response.json(connectors.find((connector) => connector.provider === request.params.provider));
+    if (connector.availability !== "available") {
+      const body: ConnectorSyncResponse = {
+        connector,
+        error: `${connector.label} sync is not available yet. ${connector.setupMessage}`,
+        reason: "not_available"
+      };
+      response.status(501).json(body);
+      return;
+    }
+
+    const definition = getConnectorDefinition(provider);
+    const body: ConnectorSyncResponse = {
+      connector,
+      error: `${definition.label} sync handler is not implemented.`,
+      reason: "not_implemented"
+    };
+    response.status(501).json(body);
   } catch (error) {
     next(error);
   }
@@ -208,6 +292,21 @@ async function createOrMergeQueuedItem(input: CreateItemInput): Promise<LibraryI
 function toPublicItem(item: LibraryItem): Omit<LibraryItem, "captureInput"> {
   const { captureInput: _captureInput, ...publicItem } = item;
   return publicItem;
+}
+
+function parseConnectorProvider(value: string, response: express.Response): ConnectorProvider | undefined {
+  if (isConnectorProvider(value)) return value;
+  response.status(404).json({ error: "Connector not found" });
+  return undefined;
+}
+
+async function getConnectorView(provider: ConnectorProvider) {
+  const connectors = await libraryRepository.listConnectors();
+  const connector = connectors.find((candidate) => candidate.provider === provider);
+  if (!connector) {
+    throw new Error(`Connector definition missing for ${provider}`);
+  }
+  return connector;
 }
 
 void drainRecognitionJobs();

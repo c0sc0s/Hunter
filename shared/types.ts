@@ -171,3 +171,15 @@ export type ConnectorView = ConnectorDefinition & {
 export type ConnectorsResponse = {
   connectors: ConnectorView[];
 };
+
+export type ConnectorUpdateInput = Partial<Pick<ConnectorRecord, "connectionState" | "accountLabel" | "lastSyncAt" | "lastError">>;
+
+export type ConnectorMutationResponse = {
+  connector: ConnectorView;
+};
+
+export type ConnectorSyncResponse = {
+  connector: ConnectorView;
+  error: string;
+  reason: "not_connected" | "not_available" | "not_implemented";
+};
