@@ -10,7 +10,7 @@
 ## Current Session
 
 - Goal: continue hardening Huntter into a commercial-grade, source-first content recognition system without AI dependency.
-- Completed features: all 26 harness slices are `done`, through `connector-state-control`.
+- Completed features: all 27 harness slices are `done`, through `feishu-oauth-foundation`.
 - Verification: `pnpm verify` passed on 2026-06-03.
 
 ## Handoff Notes
@@ -33,7 +33,10 @@
 - Browser-selected text and browser snapshot content produce sanitized Canonical Content HTML through `server/sources/contentHtml.ts`.
 - Connector state can be patched or disconnected through the API, and connector sync requests return explicit `409` or `501` responses until real provider handlers exist.
 - The web sidebar has manual connector Sync/Disconnect controls, separates local connection state from planned availability, and no longer clips Capture or connector controls.
+- Feishu OAuth authorization start/callback is implemented when `HUNTTER_FEISHU_CLIENT_ID` and `HUNTTER_FEISHU_CLIENT_SECRET` are configured.
+- Feishu access/refresh tokens are stored through server-only repository credential methods after AES-GCM sealing; public connector APIs do not return token material.
+- Feishu document raw-content import, token refresh, and background sync are still not implemented.
 
 ## Next Action
 
-All current harness features are done. The next useful slice is generating and committing `linux-x64` visual baselines, exploring CDP target inspection for native toolbar bubble screenshots, or the first real connector implementation once OAuth scopes and token storage are specified.
+All current harness features are done. The next useful slice is using the stored Feishu user access token for document-id extraction and raw-content import, generating and committing `linux-x64` visual baselines, or exploring CDP target inspection for native toolbar bubble screenshots.

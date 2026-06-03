@@ -22,6 +22,7 @@ import type {
   CaptureEvent,
   CaptureEventsResponse,
   ConnectorMutationResponse,
+  ConnectorOAuthStartResponse,
   ConnectorProvider,
   ConnectorSyncResponse,
   ConnectorView,
@@ -363,6 +364,27 @@ export function App() {
     }
   }
 
+  async function connectConnector(provider: ConnectorProvider) {
+    setConnectorAction(provider);
+    try {
+      const response = await fetch(`/api/connectors/${provider}/oauth/start`, { method: "POST" });
+      const body = (await response.json()) as Partial<ConnectorOAuthStartResponse> & { error?: string; missing?: string[] };
+      if (!response.ok || !body.authorizationUrl) {
+        const missing = body.missing?.length ? ` Missing: ${body.missing.join(", ")}.` : "";
+        pushActivity("system", `${body.error ?? `Could not start ${provider} OAuth.`}${missing}`);
+        return;
+      }
+
+      window.open(body.authorizationUrl, "_blank", "noopener,noreferrer");
+      pushActivity("system", `Opened ${provider} authorization. Click Reload after the callback completes.`);
+    } catch (connectError) {
+      pushActivity("system", connectError instanceof Error ? connectError.message : "Could not start connector authorization");
+    } finally {
+      setConnectorAction(null);
+      await loadConnectors();
+    }
+  }
+
   async function disconnectConnector(provider: ConnectorProvider) {
     setConnectorAction(provider);
     try {
@@ -559,6 +581,7 @@ export function App() {
             actionProvider={connectorAction}
             className="mt-4 shrink-0"
             connectors={connectors}
+            onConnect={(provider) => void connectConnector(provider)}
             onDisconnect={(provider) => void disconnectConnector(provider)}
             onSync={(provider) => void syncConnector(provider)}
           />
@@ -842,12 +865,14 @@ function ConnectorsPanel({
   actionProvider,
   className,
   connectors,
+  onConnect,
   onDisconnect,
   onSync
 }: {
   actionProvider: ConnectorProvider | null;
   className?: string;
   connectors: ConnectorView[];
+  onConnect: (provider: ConnectorProvider) => void;
   onDisconnect: (provider: ConnectorProvider) => void;
   onSync: (provider: ConnectorProvider) => void;
 }) {
@@ -873,19 +898,35 @@ function ConnectorsPanel({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <IconTooltip label={`Sync ${connector.label}`}>
-                    <Button
-                      aria-label={`Sync ${connector.label}`}
-                      className="size-7"
-                      size="icon"
-                      type="button"
-                      variant="ghost"
-                      onClick={() => onSync(connector.provider)}
-                      disabled={busy}
-                    >
-                      <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
-                    </Button>
-                  </IconTooltip>
+                  {connector.connectionState === "not_connected" ? (
+                    <IconTooltip label={`Connect ${connector.label}`}>
+                      <Button
+                        aria-label={`Connect ${connector.label}`}
+                        className="size-7"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => onConnect(connector.provider)}
+                        disabled={busy}
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </Button>
+                    </IconTooltip>
+                  ) : (
+                    <IconTooltip label={`Sync ${connector.label}`}>
+                      <Button
+                        aria-label={`Sync ${connector.label}`}
+                        className="size-7"
+                        size="icon"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => onSync(connector.provider)}
+                        disabled={busy}
+                      >
+                        <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+                      </Button>
+                    </IconTooltip>
+                  )}
                   {connector.connectionState !== "not_connected" ? (
                     <IconTooltip label={`Disconnect ${connector.label}`}>
                       <Button

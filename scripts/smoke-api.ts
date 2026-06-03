@@ -5,8 +5,14 @@ process.env.HUNTTER_DISABLE_LISTEN = "true";
 process.env.HUNTTER_REPOSITORY = "sqlite";
 process.env.HUNTTER_SQLITE_PATH = ":memory:";
 process.env.HUNTTER_SQLITE_IMPORT_JSON = "false";
+process.env.HUNTTER_CONNECTOR_SECRET_KEY = "smoke-connector-secret";
+delete process.env.HUNTTER_FEISHU_CLIENT_ID;
+delete process.env.HUNTTER_FEISHU_CLIENT_SECRET;
+delete process.env.HUNTTER_FEISHU_REDIRECT_URI;
+delete process.env.HUNTTER_FEISHU_SCOPES;
 
 const { app } = await import("../server/index");
+const { libraryRepository } = await import("../server/repository");
 
 const server = await new Promise<Server>((resolve) => {
   const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
@@ -35,7 +41,97 @@ try {
     ["feishu", "x"]
   );
   assert.equal(connectors.connectors[0]?.connectionState, "not_connected");
-  assert.equal(connectors.connectors[0]?.availability, "planned");
+  assert.equal(connectors.connectors[0]?.availability, "available");
+  assert.equal(connectors.connectors[1]?.availability, "planned");
+
+  const missingFeishuOAuth = await postJson<{ error: string; missing: string[] }>("/api/connectors/feishu/oauth/start", undefined, 409);
+  assert.deepEqual(missingFeishuOAuth.missing, ["HUNTTER_FEISHU_CLIENT_ID", "HUNTTER_FEISHU_CLIENT_SECRET"]);
+
+  process.env.HUNTTER_FEISHU_CLIENT_ID = "cli_a_test";
+  process.env.HUNTTER_FEISHU_CLIENT_SECRET = "feishu-secret";
+  process.env.HUNTTER_FEISHU_REDIRECT_URI = `${baseUrl}/api/connectors/feishu/oauth/callback`;
+  process.env.HUNTTER_FEISHU_SCOPES = "offline_access docx:document:readonly";
+
+  const oauthStart = await postJson<{
+    provider: string;
+    authorizationUrl: string;
+    redirectUri: string;
+    scopes: string[];
+    state: string;
+    expiresAt: string;
+  }>("/api/connectors/feishu/oauth/start", undefined, 200);
+  assert.equal(oauthStart.provider, "feishu");
+  assert.equal(oauthStart.redirectUri, `${baseUrl}/api/connectors/feishu/oauth/callback`);
+  assert.deepEqual(oauthStart.scopes, ["offline_access", "docx:document:readonly"]);
+  assert.match(oauthStart.expiresAt, /^20/);
+
+  const authorizationUrl = new URL(oauthStart.authorizationUrl);
+  assert.equal(authorizationUrl.origin, "https://accounts.feishu.cn");
+  assert.equal(authorizationUrl.pathname, "/open-apis/authen/v1/authorize");
+  assert.equal(authorizationUrl.searchParams.get("client_id"), "cli_a_test");
+  assert.equal(authorizationUrl.searchParams.get("redirect_uri"), `${baseUrl}/api/connectors/feishu/oauth/callback`);
+  assert.equal(authorizationUrl.searchParams.get("state"), oauthStart.state);
+  assert.equal(authorizationUrl.searchParams.get("scope"), "offline_access docx:document:readonly");
+  assert.equal(authorizationUrl.searchParams.get("code_challenge_method"), "S256");
+  assert.ok(authorizationUrl.searchParams.get("code_challenge"));
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
+      const body = JSON.parse(String(init?.body)) as Record<string, string>;
+      assert.equal(body.grant_type, "authorization_code");
+      assert.equal(body.client_id, "cli_a_test");
+      assert.equal(body.client_secret, "feishu-secret");
+      assert.equal(body.code, "oauth-code");
+      assert.equal(body.redirect_uri, `${baseUrl}/api/connectors/feishu/oauth/callback`);
+      assert.ok(body.code_verifier);
+      return jsonResponse({
+        code: 0,
+        data: {
+          access_token: "u-test-access-token",
+          refresh_token: "u-test-refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          refresh_expires_in: 7200,
+          scope: "offline_access docx:document:readonly"
+        }
+      });
+    }
+
+    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v1/user_info") {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      return jsonResponse({ code: 0, data: { name: "Huntter Feishu User", open_id: "ou_test" } });
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const oauthCallback = await getJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
+      `/api/connectors/feishu/oauth/callback?code=oauth-code&state=${oauthStart.state}`
+    );
+    assert.equal(oauthCallback.connector.provider, "feishu");
+    assert.equal(oauthCallback.connector.connectionState, "connected");
+    assert.equal(oauthCallback.connector.accountLabel, "Huntter Feishu User");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const credential = await libraryRepository.getConnectorCredential("feishu");
+  assert.ok(credential);
+  assert.equal(credential.tokenType, "Bearer");
+  assert.equal(credential.scope, "offline_access docx:document:readonly");
+  assert.equal(credential.accessTokenCiphertext.includes("u-test-access-token"), false);
+  assert.equal(credential.refreshTokenCiphertext?.includes("u-test-refresh-token"), false);
+
+  const disconnectedFeishuConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
+    "/api/connectors/feishu"
+  );
+  assert.equal(disconnectedFeishuConnector.connector.provider, "feishu");
+  assert.equal(disconnectedFeishuConnector.connector.connectionState, "not_connected");
+  assert.equal(disconnectedFeishuConnector.connector.accountLabel, undefined);
+  assert.equal(await libraryRepository.getConnectorCredential("feishu"), undefined);
 
   const patchedFeishuConnector = await patchJson<{
     connector: { provider: string; label: string; connectionState: string; accountLabel?: string; lastError?: string };
@@ -321,6 +417,13 @@ async function deleteJson<T>(path: string): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, { method: "DELETE" });
   assert.equal(response.ok, true, `${path} returned HTTP ${response.status}`);
   return (await response.json()) as T;
+}
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
 }
 
 function wait(ms: number): Promise<void> {

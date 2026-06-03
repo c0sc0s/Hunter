@@ -1,13 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CaptureEvent, ConnectorRecord, LibraryItem, LibraryStats, SourceType } from "../shared/types";
-import type { RecognitionJob } from "./repositories/types";
+import type { ConnectorCredentialRecord, RecognitionJob } from "./repositories/types";
 import { seedItems } from "./seed";
 
 type StoreFile = {
   items: LibraryItem[];
   recognitionJobs?: RecognitionJob[];
   connectors?: ConnectorRecord[];
+  connectorCredentials?: ConnectorCredentialRecord[];
   captureEvents?: CaptureEvent[];
 };
 
@@ -15,6 +16,7 @@ type StoreState = {
   items: LibraryItem[];
   recognitionJobs: RecognitionJob[];
   connectors: ConnectorRecord[];
+  connectorCredentials: ConnectorCredentialRecord[];
   captureEvents: CaptureEvent[];
 };
 
@@ -64,6 +66,7 @@ async function readStoreFromDisk(): Promise<StoreState> {
       items: parsed.items,
       recognitionJobs: parsed.recognitionJobs ?? [],
       connectors: parsed.connectors ?? [],
+      connectorCredentials: parsed.connectorCredentials ?? [],
       captureEvents: parsed.captureEvents ?? []
     };
   } catch (error) {
@@ -71,7 +74,7 @@ async function readStoreFromDisk(): Promise<StoreState> {
       throw error;
     }
 
-    const seeded = { items: seedItems, recognitionJobs: [], connectors: [], captureEvents: [] };
+    const seeded = { items: seedItems, recognitionJobs: [], connectors: [], connectorCredentials: [], captureEvents: [] };
     await writeStoreToDisk(seeded);
     return seeded;
   }
@@ -86,6 +89,21 @@ export async function updateConnectors<T>(
     const state = await readStoreFromDisk();
     const { connectors, result } = await update([...state.connectors]);
     await writeStoreToDisk({ ...state, connectors });
+    return result;
+  });
+}
+
+export async function updateConnectorCredentials<T>(
+  update: (
+    credentials: ConnectorCredentialRecord[]
+  ) =>
+    | Promise<{ connectorCredentials: ConnectorCredentialRecord[]; result: T }>
+    | { connectorCredentials: ConnectorCredentialRecord[]; result: T }
+): Promise<T> {
+  return enqueueStoreOperation(async () => {
+    const state = await readStoreFromDisk();
+    const { connectorCredentials, result } = await update([...state.connectorCredentials]);
+    await writeStoreToDisk({ ...state, connectorCredentials });
     return result;
   });
 }

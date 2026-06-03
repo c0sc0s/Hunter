@@ -10,7 +10,10 @@ Last updated: 2026-06-03
 - Repository behavior is abstracted behind JSON and SQLite adapters.
 - Feishu/X permissioned-source failures carry `requiredConnector` and render against connector state.
 - Connector state can now be updated or cleared through the API, while connector sync requests fail explicitly until real provider handlers exist.
+- Feishu OAuth authorization start/callback exists behind configured app credentials and stores access/refresh tokens as encrypted server-side connector credentials.
+- Disconnecting Feishu clears encrypted connector credentials as well as public connector state.
 - The web sidebar now exposes manual connector Sync and Disconnect controls, and planned availability no longer hides local connection state.
+- The web sidebar now exposes manual connector Connect controls; users still click Reload after completing OAuth because the client does not poll.
 - The desktop sidebar is scrollable with non-shrinking operational panels so Capture and connector controls are not clipped.
 - Feishu browser snapshots now use the content quality gate, producing `ready` for substantial visible content and `partial` for limited visible content.
 - X captures now use bounded oEmbed, selected-text fallback, and browser-snapshot fallback before requiring a future X connector.
@@ -91,6 +94,10 @@ Last updated: 2026-06-03
 - Latest run expanded `pnpm smoke:api` to cover connector state updates, single-connector reads, disconnected sync failure, planned sync failure, and disconnect behavior.
 - Latest run tightened `pnpm golden:visual` visible-control checks with IntersectionObserver clipping checks for desktop Capture and connector controls.
 - Latest run refreshed `win32-x64` visual baselines after the connector sidebar and unclipped Capture panel layout change.
+- Latest run added Feishu OAuth start/callback endpoints, short-lived OAuth state, PKCE authorization parameters, mocked token exchange coverage, account label lookup, and encrypted connector credential storage.
+- Latest run added `pnpm test:connector-secrets` for AES-GCM connector token sealing and added SQLite credential CRUD coverage.
+- Latest run expanded `pnpm smoke:api` to cover Feishu OAuth missing-config errors, authorization URL generation, callback token storage, public response token exclusion, and disconnect credential cleanup.
+- Latest run refreshed `win32-x64` visual baselines after the sidebar connector action changed from Sync to Connect for disconnected providers.
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
@@ -100,10 +107,11 @@ Last updated: 2026-06-03
 
 ## Open Gaps
 
-- Feishu and X OAuth/import connectors are not implemented; only local connector state control and explicit unsupported sync responses exist.
+- Feishu OAuth authorization and encrypted token storage are implemented, but Feishu document import/sync is not implemented.
+- X OAuth/import connector is not implemented; only local connector state control and explicit unsupported sync responses exist.
 - Native Chrome toolbar bubble target inspection is still not executable through Playwright in this workspace; the toolbar action popup API itself is now smoke-tested.
 - `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, explore CDP target inspection for native toolbar bubble screenshots, or start the first real connector implementation slice with OAuth/token-storage requirements.
+All current harness features are `done`. The next hardening step should use the stored Feishu user access token for document-id extraction and raw-content import, generate and commit `linux-x64` visual baselines, or explore CDP target inspection for native toolbar bubble screenshots.

@@ -87,8 +87,8 @@ async function exerciseDesktop(page: Page): Promise<void> {
 
   await assertVisible(page.getByRole("button", { name: "Save", exact: true }), "desktop Save button");
   await assertVisible(page.getByRole("button", { name: "Reload", exact: true }), "desktop Reload button");
-  await assertVisible(page.getByRole("button", { name: "Sync Feishu / Lark", exact: true }), "desktop Feishu connector sync");
-  await assertVisible(page.getByRole("button", { name: "Sync X", exact: true }), "desktop X connector sync");
+  await assertVisible(page.getByRole("button", { name: "Connect Feishu / Lark", exact: true }), "desktop Feishu connector connect");
+  await assertVisible(page.getByRole("button", { name: "Connect X", exact: true }), "desktop X connector connect");
   await assertVisible(page.getByLabel("Search"), "desktop Search input");
   await assertNoHorizontalOverflow(page, "desktop");
   await assertScreenshot(page, "desktop-library.png", { minBytes: 60_000, width: 1440, height: 1000 });

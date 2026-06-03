@@ -44,7 +44,7 @@ pnpm check
 pnpm build
 ```
 
-`pnpm test` currently covers deterministic content signals, recognition metadata and phase timing, Capture Events, content quality rules, sanitized HTML, bounded HTML fetch, cover image scoring, Extracted Content contract validation, content recognition fixtures, source adapter contracts, focused extension snapshots, connector state, durable recognition jobs, and SQLite Repository behavior. `pnpm golden:browser` verifies the sandboxed reader view for captured Canonical Content HTML, `pnpm golden:extension` loads the real Chrome extension into Chromium to verify installed extension capture, and `pnpm golden:visual` checks desktop/mobile visual contracts while writing screenshots to `artifacts/visual/` and comparing committed platform baselines when present. Use `pnpm golden:visual:update` to intentionally refresh the current platform's baseline PNGs.
+`pnpm test` currently covers deterministic content signals, recognition metadata and phase timing, Capture Events, content quality rules, sanitized HTML, bounded HTML fetch, cover image scoring, Extracted Content contract validation, encrypted connector secret handling, content recognition fixtures, source adapter contracts, focused extension snapshots, connector state, durable recognition jobs, and SQLite Repository behavior. `pnpm golden:browser` verifies the sandboxed reader view for captured Canonical Content HTML, `pnpm golden:extension` loads the real Chrome extension into Chromium to verify installed extension capture, and `pnpm golden:visual` checks desktop/mobile visual contracts while writing screenshots to `artifacts/visual/` and comparing committed platform baselines when present. Use `pnpm golden:visual:update` to intentionally refresh the current platform's baseline PNGs.
 
 ## Chrome Extension
 
@@ -93,7 +93,18 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Connectors
 
-`GET /api/connectors` returns planned connector definitions and any stored connection state. `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it, and `POST /api/connectors/:provider/sync` returns an explicit unavailable/not-implemented error until a real connector exists. OAuth is not implemented yet; the current product boundary is explicit: private Feishu/X content requires either a browser snapshot from the extension or a future connector.
+`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/:provider/sync` returns an explicit unavailable/not-implemented error until source import exists. Private Feishu/X content still requires either a browser snapshot from the extension or a future connector import path.
+
+Feishu OAuth configuration:
+
+```bash
+$env:HUNTTER_FEISHU_CLIENT_ID="cli_xxx"
+$env:HUNTTER_FEISHU_CLIENT_SECRET="xxx"
+$env:HUNTTER_FEISHU_REDIRECT_URI="http://127.0.0.1:4317/api/connectors/feishu/oauth/callback"
+$env:HUNTTER_FEISHU_SCOPES="offline_access docx:document:readonly"
+```
+
+Connector tokens are encrypted before JSON/SQLite storage. Set `HUNTTER_CONNECTOR_SECRET_KEY` to pin the encryption key; otherwise Huntter creates a local key under `data/`.
 
 ## Persistence
 

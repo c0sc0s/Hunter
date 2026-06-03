@@ -1170,6 +1170,100 @@
         }
       ],
       "next": "Implement the first real connector only after OAuth scopes, token storage, and provider-specific import semantics are specified."
+    },
+    {
+      "id": "feishu-oauth-foundation",
+      "title": "Authorize Feishu and store connector tokens safely",
+      "status": "done",
+      "scope": [
+        "Add Feishu OAuth start and callback endpoints.",
+        "Generate short-lived OAuth state and PKCE authorization parameters.",
+        "Exchange authorization code for Feishu user access and refresh tokens.",
+        "Fetch Feishu account label after token exchange.",
+        "Store connector token material only as encrypted server-side credentials.",
+        "Delete stored credentials when the connector is disconnected.",
+        "Expose a manual Connect action in the web connector panel.",
+        "Keep connector sync/import explicitly unimplemented until provider import handlers exist."
+      ],
+      "outOfScope": [
+        "Feishu document raw-content import",
+        "Feishu block rendering",
+        "Feishu token refresh job",
+        "Background sync/import scheduler",
+        "X OAuth"
+      ],
+      "dependencies": ["connector-state-control"],
+      "definitionOfDone": [
+        "`POST /api/connectors/feishu/oauth/start` returns a Feishu authorization URL when credentials are configured.",
+        "`GET /api/connectors/feishu/oauth/callback` exchanges code for token data, stores encrypted credentials, and marks Feishu connected.",
+        "Missing Feishu app credentials return `409` with actionable missing env vars.",
+        "Disconnecting Feishu removes encrypted connector credentials.",
+        "`pnpm test:connector-secrets` proves connector token sealing is not plaintext and round-trips with the configured key.",
+        "`pnpm smoke:api` covers missing config, authorization URL generation, callback token exchange, encrypted credential storage, and credential deletion.",
+        "`pnpm verify` passes with the Feishu OAuth foundation included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:connector-secrets",
+          "proves": "Connector secret sealing hides plaintext token values and decrypts with the configured key."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Feishu OAuth start/callback, mocked token exchange, connector state, encrypted credential storage, and disconnect cleanup work through the API."
+        },
+        {
+          "command": "pnpm golden:visual",
+          "proves": "The sidebar shows manual Connect controls for Feishu and X without clipping."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Feishu OAuth foundation remains compatible with the full local gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": [
+            "pnpm check",
+            "pnpm lint",
+            "pnpm format:check",
+            "pnpm test:connector-secrets",
+            "pnpm test:repository",
+            "pnpm smoke:api",
+            "pnpm golden:browser",
+            "pnpm golden:visual:update",
+            "pnpm golden:visual",
+            "pnpm verify"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "server/connectorAuth/feishuOAuth.ts",
+            "server/connectorAuth/oauthState.ts",
+            "server/connectorSecretBox.ts",
+            "server/index.ts",
+            "server/repositories/types.ts",
+            "server/repositories/jsonRepository.ts",
+            "server/repositories/sqliteRepository.ts",
+            "server/store.ts",
+            "shared/types.ts",
+            "src/App.tsx",
+            "scripts/smoke-api.ts",
+            "server/tests/connectorSecretBox.test.ts",
+            "server/tests/sqliteRepository.test.ts",
+            "tests/visual-baselines/win32-x64/desktop-library.png",
+            "tests/visual-baselines/win32-x64/mobile-library.png",
+            "tests/visual-baselines/win32-x64/mobile-detail.png",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/DATABASE_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md",
+            "docs/CONTENT_RECOGNITION.md"
+          ],
+          "mockBoundary": "Smoke coverage mocks Feishu token and user-info HTTP responses. This slice implements OAuth authorization and encrypted local credential storage, but does not import Feishu documents, refresh tokens automatically, or sync background content.",
+          "notes": "Feishu uses the current official OAuth authorize and token endpoints, stores short-lived OAuth state in memory with PKCE verifier data, and writes only AES-GCM sealed tokens through server-only repository credential methods. The web panel opens OAuth with a manual Connect action and still relies on Reload after callback completion."
+        }
+      ],
+      "next": "Use the stored Feishu user access token to implement document-id extraction and raw-content import for saved Feishu URL-only items."
     }
   ]
 }

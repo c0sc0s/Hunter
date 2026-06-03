@@ -24,6 +24,17 @@ export type RecognitionJob = {
   updatedAt: string;
 };
 
+export type ConnectorCredentialRecord = {
+  provider: ConnectorRecord["provider"];
+  accessTokenCiphertext: string;
+  refreshTokenCiphertext?: string;
+  tokenType: string;
+  scope?: string;
+  accessTokenExpiresAt?: string;
+  refreshTokenExpiresAt?: string;
+  updatedAt: string;
+};
+
 export type LibraryRepository = {
   list(query?: LibraryQuery): Promise<LibraryResponse>;
   findById(id: string): Promise<LibraryItem | undefined>;
@@ -44,4 +55,7 @@ export type LibraryRepository = {
   listCaptureEvents(limit?: number): Promise<CaptureEvent[]>;
   listConnectors(): Promise<ConnectorView[]>;
   upsertConnector(record: ConnectorRecord): Promise<ConnectorRecord>;
+  getConnectorCredential(provider: ConnectorRecord["provider"]): Promise<ConnectorCredentialRecord | undefined>;
+  upsertConnectorCredential(record: ConnectorCredentialRecord): Promise<ConnectorCredentialRecord>;
+  deleteConnectorCredential(provider: ConnectorRecord["provider"]): Promise<boolean>;
 };

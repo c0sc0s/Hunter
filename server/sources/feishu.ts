@@ -65,7 +65,7 @@ export const feishuAdapter: SourceAdapter = {
       sourceAccess: "connector_required",
       requiredConnector: "feishu",
       sourceMessage:
-        "Feishu pages usually require the user's login and document permissions. Open the page and save with the extension, or connect a Feishu account for full content import."
+        "Feishu pages usually require the user's login and document permissions. Open the page and save with the extension; Feishu account authorization is the next step toward native document import."
     };
   }
 };

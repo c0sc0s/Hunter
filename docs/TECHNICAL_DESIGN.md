@@ -101,11 +101,13 @@ type CaptureEvent = {
 - `GET /api/connectors/:provider`
 - `PATCH /api/connectors/:provider`
 - `DELETE /api/connectors/:provider`
+- `POST /api/connectors/:provider/oauth/start`
+- `GET /api/connectors/:provider/oauth/callback?code=&state=`
 - `POST /api/connectors/:provider/sync`
 
 `GET /api/items` returns the current page, global library stats, and page metadata. JSON and SQLite adapters share the same query semantics; SQLite executes search through FTS.
 
-`GET /api/connectors` returns connector definitions plus stored connection state. `PATCH` records local connector state, `DELETE` clears mutable connector state, and `POST /sync` fails explicitly with `409` for disconnected providers or `501` for planned providers without a sync handler. OAuth is not wired yet; permissioned sources use this model to explain exactly which connector is required.
+`GET /api/connectors` returns connector definitions plus stored connection state. `PATCH` records local connector state, `DELETE` clears mutable connector state and stored credentials, Feishu `POST /oauth/start` creates a short-lived OAuth state and PKCE authorization URL, and Feishu `/oauth/callback` exchanges the code for encrypted local credentials. `POST /sync` still fails explicitly with `409` for disconnected providers or `501` when provider import is not implemented. Permissioned sources use this model to explain exactly which connector is required.
 
 `GET /api/capture-events` returns recent Capture Event diagnostics. Events include source URL, capture method, snapshot byte count, result state, timing, and error context, but never raw browser snapshot HTML or text.
 
@@ -140,6 +142,8 @@ The app now uses source adapters instead of one universal parser.
 - `server/recognitionMetadata.ts`: recognition version and deterministic content hashing.
 - `server/sources/x.ts`: public X post resolution through bounded oEmbed, selected-text fallback, quality-gated browser snapshot fallback, and connector-required fallback.
 - `server/sources/feishu.ts`: Feishu URL detection, quality-gated browser snapshot capture, sanitized Canonical Content HTML, and connector-required fallback.
+- `server/connectorAuth/feishuOAuth.ts`: Feishu OAuth authorization URL generation, callback token exchange, account label lookup, and encrypted credential persistence.
+- `server/connectorSecretBox.ts`: AES-GCM sealing for connector tokens before JSON or SQLite storage.
 - `server/sources/registry.ts`: adapter routing.
 
 This keeps source-specific behavior local and avoids pretending that every URL can be parsed like a public article.

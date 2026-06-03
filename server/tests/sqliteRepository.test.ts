@@ -220,10 +220,28 @@ try {
   const connectors = await repo.listConnectors();
   const feishuConnector = connectors.find((candidate) => candidate.provider === "feishu");
   assert.equal(feishuConnector?.label, "Feishu / Lark");
-  assert.equal(feishuConnector?.availability, "planned");
+  assert.equal(feishuConnector?.availability, "available");
   assert.equal(feishuConnector?.connectionState, "error");
   assert.equal(feishuConnector?.accountLabel, "Docs Bot");
   assert.equal(feishuConnector?.lastError, "missing document scope");
+
+  await repo.upsertConnectorCredential({
+    provider: "feishu",
+    accessTokenCiphertext: "v1.access",
+    refreshTokenCiphertext: "v1.refresh",
+    tokenType: "Bearer",
+    scope: "offline_access docx:document:readonly",
+    accessTokenExpiresAt: now,
+    refreshTokenExpiresAt: now,
+    updatedAt: now
+  });
+
+  const credential = await repo.getConnectorCredential("feishu");
+  assert.equal(credential?.accessTokenCiphertext, "v1.access");
+  assert.equal(credential?.refreshTokenCiphertext, "v1.refresh");
+  assert.equal(credential?.scope, "offline_access docx:document:readonly");
+  assert.equal(await repo.deleteConnectorCredential("feishu"), true);
+  assert.equal(await repo.getConnectorCredential("feishu"), undefined);
 
   await repo.recordCaptureEvent({
     id: "capture-event-1",

@@ -18,7 +18,7 @@ import { normalizeRecognitionTiming } from "../recognitionTiming";
 import { readItems } from "../store";
 import { markRecognitionFailedItem, mergeQueuedItem, mergeRecognitionResult, patchItem } from "./itemMerges";
 import { buildPage, normalizeLibraryQuery, type NormalizedLibraryQuery } from "./listQuery";
-import type { LibraryRepository, RecognitionJob, RecognitionJobStatus } from "./types";
+import type { ConnectorCredentialRecord, LibraryRepository, RecognitionJob, RecognitionJobStatus } from "./types";
 
 type SqliteRepositoryOptions = {
   databasePath?: string;
@@ -85,6 +85,17 @@ type ConnectorRow = {
   connected_at: string | null;
   last_sync_at: string | null;
   last_error: string | null;
+  updated_at: string;
+};
+
+type ConnectorCredentialRow = {
+  provider: ConnectorProvider;
+  access_token_ciphertext: string;
+  refresh_token_ciphertext: string | null;
+  token_type: string;
+  scope: string | null;
+  access_token_expires_at: string | null;
+  refresh_token_expires_at: string | null;
   updated_at: string;
 };
 
@@ -297,6 +308,48 @@ export class SqliteRepository implements LibraryRepository {
     return record;
   }
 
+  async getConnectorCredential(provider: ConnectorProvider) {
+    const row = this.db.prepare("select * from connector_credentials where provider = ?").get(provider) as
+      | ConnectorCredentialRow
+      | undefined;
+    return row ? rowToConnectorCredential(row) : undefined;
+  }
+
+  async upsertConnectorCredential(record: ConnectorCredentialRecord) {
+    this.db
+      .prepare(
+        `
+        insert or replace into connector_credentials (
+          provider,
+          access_token_ciphertext,
+          refresh_token_ciphertext,
+          token_type,
+          scope,
+          access_token_expires_at,
+          refresh_token_expires_at,
+          updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      )
+      .run(
+        record.provider,
+        record.accessTokenCiphertext,
+        record.refreshTokenCiphertext ?? null,
+        record.tokenType,
+        record.scope ?? null,
+        record.accessTokenExpiresAt ?? null,
+        record.refreshTokenExpiresAt ?? null,
+        record.updatedAt
+      );
+
+    return record;
+  }
+
+  async deleteConnectorCredential(provider: ConnectorProvider) {
+    const result = this.db.prepare("delete from connector_credentials where provider = ?").run(provider) as { changes: number };
+    return result.changes > 0;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -414,6 +467,17 @@ export class SqliteRepository implements LibraryRepository {
         connected_at text,
         last_sync_at text,
         last_error text,
+        updated_at text not null
+      );
+
+      create table if not exists connector_credentials (
+        provider text primary key,
+        access_token_ciphertext text not null,
+        refresh_token_ciphertext text,
+        token_type text not null,
+        scope text,
+        access_token_expires_at text,
+        refresh_token_expires_at text,
         updated_at text not null
       );
     `);
@@ -849,6 +913,19 @@ function rowToConnector(row: ConnectorRow): ConnectorRecord {
     connectedAt: optionalString(row.connected_at),
     lastSyncAt: optionalString(row.last_sync_at),
     lastError: optionalString(row.last_error),
+    updatedAt: row.updated_at
+  };
+}
+
+function rowToConnectorCredential(row: ConnectorCredentialRow): ConnectorCredentialRecord {
+  return {
+    provider: row.provider,
+    accessTokenCiphertext: row.access_token_ciphertext,
+    refreshTokenCiphertext: optionalString(row.refresh_token_ciphertext),
+    tokenType: row.token_type,
+    scope: optionalString(row.scope),
+    accessTokenExpiresAt: optionalString(row.access_token_expires_at),
+    refreshTokenExpiresAt: optionalString(row.refresh_token_expires_at),
     updatedAt: row.updated_at
   };
 }

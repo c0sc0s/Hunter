@@ -62,6 +62,18 @@ export const libraryRepository: LibraryRepository = {
 
   async upsertConnector(record) {
     return (await resolveRepository()).upsertConnector(record);
+  },
+
+  async getConnectorCredential(provider) {
+    return (await resolveRepository()).getConnectorCredential(provider);
+  },
+
+  async upsertConnectorCredential(record) {
+    return (await resolveRepository()).upsertConnectorCredential(record);
+  },
+
+  async deleteConnectorCredential(provider) {
+    return (await resolveRepository()).deleteConnectorCredential(provider);
   }
 };
 

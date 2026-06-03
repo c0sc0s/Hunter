@@ -142,7 +142,20 @@ create table connectors (
 );
 ```
 
-Connector definitions live in application code so planned providers can appear in the UI before OAuth is implemented. The table stores only mutable connection state. API mutations update or clear this local state; connector sync requests remain explicit `409` or `501` failures until OAuth token storage and provider-specific sync handlers exist.
+```sql
+create table connector_credentials (
+  provider text primary key,
+  access_token_ciphertext text not null,
+  refresh_token_ciphertext text,
+  token_type text not null,
+  scope text,
+  access_token_expires_at timestamptz,
+  refresh_token_expires_at timestamptz,
+  updated_at timestamptz not null
+);
+```
+
+Connector definitions live in application code so planned providers can appear in the UI before OAuth is implemented. The `connectors` table stores only mutable public connection state. The `connector_credentials` table stores encrypted token material and is never returned by public API responses. API mutations update or clear local connector state; disconnect also deletes stored credentials. Connector sync requests remain explicit `409` or `501` failures until provider-specific import handlers exist.
 
 ## Search
 
@@ -186,6 +199,7 @@ The API should not depend on JSON file layout. The Repository interface should o
 - Replacing recognition output while preserving user workflow state.
 - Storing original capture input for deterministic refresh without returning large snapshots from public API responses.
 - Listing and updating connector connection state.
+- Storing, reading, and deleting encrypted connector credentials behind server-only methods.
 - Tracking recognition version, recognized timestamp, and content hash.
 - Recording and listing Capture Events for capture and recognition diagnostics without storing raw snapshot bodies in the event stream.
 - Patching status, favorite, tags, and note.
@@ -203,7 +217,8 @@ The current JSON implementation can remain as one Adapter. SQLite/Postgres becom
 6. Move background recognition into a durable job table. Done for JSON and SQLite adapters.
 7. Add connector state storage and API definitions. Done for JSON and SQLite adapters.
 8. Add recognition metadata columns, recognition duration, phase timing JSON, and content hash index. Done for SQLite adapter.
-9. Normalize canonical URLs by stripping tracking parameters before dedupe. Done for JSON and SQLite adapters through shared recognition code.
-10. Store original capture input for refresh/reprocessing while stripping it from public API responses. Done for JSON and SQLite adapters.
-11. Add Capture Events for queued captures, recognition completion, manual refresh, and recognition failure. Done for JSON and SQLite adapters.
-12. Implement the first OAuth Connector against this table when product scope is ready.
+9. Add encrypted connector credential storage. Done for JSON and SQLite adapters.
+10. Normalize canonical URLs by stripping tracking parameters before dedupe. Done for JSON and SQLite adapters through shared recognition code.
+11. Store original capture input for refresh/reprocessing while stripping it from public API responses. Done for JSON and SQLite adapters.
+12. Add Capture Events for queued captures, recognition completion, manual refresh, and recognition failure. Done for JSON and SQLite adapters.
+13. Implement Feishu OAuth authorization against connector credentials. Done for authorization and token storage; document import remains next.

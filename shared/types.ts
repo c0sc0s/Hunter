@@ -183,3 +183,12 @@ export type ConnectorSyncResponse = {
   error: string;
   reason: "not_connected" | "not_available" | "not_implemented";
 };
+
+export type ConnectorOAuthStartResponse = {
+  provider: ConnectorProvider;
+  authorizationUrl: string;
+  redirectUri: string;
+  scopes: string[];
+  state: string;
+  expiresAt: string;
+};

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type {
   CaptureEventsResponse,
   ConnectorMutationResponse,
+  ConnectorOAuthStartResponse,
   ConnectorProvider,
   ConnectorSyncResponse,
   ConnectorUpdateInput,
@@ -13,6 +14,8 @@ import type {
 } from "../shared/types";
 import { buildCaptureEvent } from "./captureEvents";
 import { toRecognitionInput, toRefreshInput } from "./captureInput";
+import { completeFeishuOAuth, ConnectorConfigError, startFeishuOAuth } from "./connectorAuth/feishuOAuth";
+import { OAuthStateError } from "./connectorAuth/oauthState";
 import { buildConnectorRecord, buildDisconnectedConnectorRecord, getConnectorDefinition, isConnectorProvider } from "./connectors";
 import { listSourceAdapters } from "./extract";
 import { buildItem, buildQueuedItem } from "./itemBuilder";
@@ -129,10 +132,63 @@ app.delete("/api/connectors/:provider", async (request, response, next) => {
     const provider = parseConnectorProvider(request.params.provider, response);
     if (!provider) return;
 
+    await libraryRepository.deleteConnectorCredential(provider);
     await libraryRepository.upsertConnector(buildDisconnectedConnectorRecord(provider));
     const body: ConnectorMutationResponse = { connector: await getConnectorView(provider) };
     response.json(body);
   } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/connectors/:provider/oauth/start", async (request, response, next) => {
+  try {
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    if (provider !== "feishu") {
+      response.status(501).json({ error: `${getConnectorDefinition(provider).label} OAuth is not implemented yet.` });
+      return;
+    }
+
+    const body: ConnectorOAuthStartResponse = startFeishuOAuth(requestOrigin(request));
+    response.json(body);
+  } catch (error) {
+    if (error instanceof ConnectorConfigError) {
+      response.status(409).json({ error: error.message, missing: error.missing });
+      return;
+    }
+    if (error instanceof OAuthStateError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+app.get("/api/connectors/:provider/oauth/callback", async (request, response, next) => {
+  try {
+    const provider = parseConnectorProvider(request.params.provider, response);
+    if (!provider) return;
+
+    if (provider !== "feishu") {
+      response.status(501).json({ error: `${getConnectorDefinition(provider).label} OAuth is not implemented yet.` });
+      return;
+    }
+
+    const code = z.string().min(1).parse(request.query.code);
+    const state = z.string().min(1).parse(request.query.state);
+    const body = await completeFeishuOAuth(code, state, libraryRepository);
+    response.json(body);
+  } catch (error) {
+    if (error instanceof ConnectorConfigError) {
+      response.status(409).json({ error: error.message, missing: error.missing });
+      return;
+    }
+    if (error instanceof OAuthStateError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
     next(error);
   }
 });
@@ -307,6 +363,10 @@ async function getConnectorView(provider: ConnectorProvider) {
     throw new Error(`Connector definition missing for ${provider}`);
   }
   return connector;
+}
+
+function requestOrigin(request: express.Request): string {
+  return `${request.protocol}://${request.get("host")}`;
 }
 
 void drainRecognitionJobs();

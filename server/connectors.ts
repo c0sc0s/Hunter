@@ -6,9 +6,15 @@ export const connectorDefinitions: ConnectorDefinition[] = [
     label: "Feishu / Lark",
     sourceTypes: ["feishu"],
     authMode: "oauth",
-    availability: "planned",
-    capabilities: ["Document block import", "Wiki page import", "Image and attachment sync", "Permission-aware refresh"],
-    setupMessage: "OAuth connector is planned. Browser snapshot capture remains the current fallback for visible content."
+    availability: "available",
+    capabilities: [
+      "OAuth user authorization",
+      "Document raw-content import (next)",
+      "Wiki page import (next)",
+      "Permission-aware refresh (next)"
+    ],
+    setupMessage:
+      "OAuth authorization is available when Feishu app credentials are configured. Browser snapshot capture remains the current fallback until document import is enabled."
   },
   {
     provider: "x",
