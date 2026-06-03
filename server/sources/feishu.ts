@@ -1,7 +1,7 @@
 import type { SourceAdapter } from "./types";
 import { contentHtmlFromSnapshot, contentHtmlFromText } from "./contentHtml";
 import { decideContentQuality } from "./contentQuality";
-import { pickCoverImage } from "./coverImage";
+import { selectCoverImage } from "./coverImage";
 import { cleanText, faviconFor, isFeishuHost, normalizeUrl } from "./url";
 
 export const feishuAdapter: SourceAdapter = {
@@ -23,6 +23,12 @@ export const feishuAdapter: SourceAdapter = {
     const visibleText = quality.readableText;
 
     if (visibleText.length > 40) {
+      const coverImage = await selectCoverImage({
+        url: normalizedUrl,
+        html: snapshot?.html,
+        snapshotCandidates: snapshot?.imageCandidates
+      });
+
       return {
         url: normalizedUrl,
         canonicalUrl: normalizeUrl(snapshot?.canonicalUrl ?? normalizedUrl),
@@ -35,7 +41,7 @@ export const feishuAdapter: SourceAdapter = {
           quality.extractor === "browser_selection"
             ? contentHtmlFromText(visibleText)
             : contentHtmlFromSnapshot(snapshot?.html, visibleText),
-        coverImage: pickCoverImage(snapshot?.imageCandidates?.map((candidate) => ({ url: candidate, source: "snapshot_image" }))),
+        coverImage,
         favicon: snapshot?.favicon ?? faviconFor(normalizedUrl),
         wordCount: quality.wordCount,
         confidence: quality.confidence,

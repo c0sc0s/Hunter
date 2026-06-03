@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 import type { PageSnapshot } from "../../shared/types";
 import { contentHtmlFromSnapshot, contentHtmlFromText, sanitizeContentHtml } from "./contentHtml";
 import { decideContentQuality, hasReadySelectedText, shouldRunReadabilityFallback } from "./contentQuality";
-import { pickCoverImage, type CoverImageCandidate } from "./coverImage";
+import { selectCoverImage } from "./coverImage";
 import { fetchHtmlDocument } from "./htmlFetch";
 import type { SourceAdapter } from "./types";
 import { absolutize, cleanText, detectSourceType, faviconFor, normalizeUrl } from "./url";
@@ -41,18 +41,15 @@ export const genericWebAdapter: SourceAdapter = {
       new URL(normalizedUrl).hostname;
     const sourceName =
       firstText(snapshot?.siteName, defuddled?.site, article?.siteName, metadata.siteName) ?? new URL(normalizedUrl).hostname;
-    const imageCandidates: CoverImageCandidate[] = [
-      ...(snapshot?.imageCandidates ?? []).map((candidate) => ({ url: candidate, source: "snapshot_image" as const })),
-      { url: absolutize(defuddled?.image, normalizedUrl), source: "parser" },
-      { url: metadata.ogImage, source: "open_graph" },
-      { url: metadata.twitterImage, source: "twitter_card" },
-      { url: metadata.jsonLdImage, source: "structured_data" },
-      ...extractArticleImages(document, normalizedUrl).map((candidate) => ({ url: candidate, source: "article_image" as const }))
-    ];
     const excerpt = cleanText(
       selectedText || snapshot?.excerpt || defuddled?.description || article?.excerpt || metadata.description || quality.readableText
     ).slice(0, 420);
     const hasContent = Boolean(quality.readableText || excerpt);
+    const coverImage = await selectCoverImage({
+      url: normalizedUrl,
+      html,
+      snapshotCandidates: snapshot?.imageCandidates
+    });
 
     return {
       url: normalizedUrl,
@@ -68,7 +65,7 @@ export const genericWebAdapter: SourceAdapter = {
         extractor: quality.extractor,
         readableText: quality.readableText
       }),
-      coverImage: pickCoverImage(imageCandidates),
+      coverImage,
       favicon: snapshot?.favicon ?? absolutize(defuddled?.favicon, normalizedUrl) ?? metadata.favicon ?? faviconFor(normalizedUrl),
       author: firstText(defuddled?.author, article?.byline, metadata.author),
       publishedAt: firstText(snapshot?.publishedAt, defuddled?.published, article?.publishedTime, metadata.publishedAt),
@@ -116,9 +113,6 @@ function extractMetadata(document: Document, url: string, snapshot?: PageSnapsho
       meta('meta[name="description"]') ??
       jsonLd.description,
     siteName: meta('meta[property="og:site_name"]') ?? jsonLd.publisherName,
-    ogImage: absolutize(meta('meta[property="og:image"]'), url),
-    twitterImage: absolutize(meta('meta[name="twitter:image"]'), url),
-    jsonLdImage: absolutize(jsonLd.image, url),
     canonicalUrl: absolutize(link('link[rel="canonical"]') ?? meta('meta[property="og:url"]'), url),
     favicon: snapshot?.favicon ?? absolutize(link('link[rel="icon"]') ?? link('link[rel="shortcut icon"]'), url),
     author: meta('meta[name="author"]') ?? jsonLd.authorName,
@@ -145,22 +139,8 @@ function parseJsonLd(document: Document) {
     authorName: firstJsonLdText(node.author, "name"),
     publisherName: firstJsonLdText(node.publisher, "name"),
     datePublished: asText(node.datePublished),
-    dateModified: asText(node.dateModified),
-    image: firstJsonLdImage(node.image)
+    dateModified: asText(node.dateModified)
   };
-}
-
-function firstJsonLdImage(value: unknown): string | undefined {
-  if (Array.isArray(value)) {
-    return value.map(firstJsonLdImage).find(Boolean);
-  }
-
-  if (typeof value === "object" && value) {
-    const record = value as Record<string, unknown>;
-    return asText(record.url ?? record.contentUrl);
-  }
-
-  return asText(value);
 }
 
 function pickJsonLdArticleNode(value: unknown): Record<string, unknown> {
@@ -194,13 +174,6 @@ function firstJsonLdText(value: unknown, key: string): string | undefined {
   }
 
   return asText(value);
-}
-
-function extractArticleImages(document: Document, url: string): string[] {
-  return [...document.querySelectorAll<HTMLImageElement>("article img, main img, img")]
-    .map((image) => image.currentSrc || image.src || image.getAttribute("data-src") || "")
-    .map((src) => absolutize(src, url))
-    .filter((src): src is string => Boolean(src));
 }
 
 function stripStructuralNoise(document: Document): Document {

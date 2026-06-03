@@ -5,7 +5,7 @@ import { enrichContent } from "./enrich";
 import { detectSourceType, extractContent, normalizeUrl } from "./extract";
 import { buildContentHash, contentRecognitionVersion } from "./recognitionMetadata";
 import { createRecognitionTimer } from "./recognitionTiming";
-import { pickCoverImage } from "./sources/coverImage";
+import { selectCoverImageFromCandidates } from "./sources/coverImage";
 import { normalizeTags } from "./tags";
 
 export async function buildItem(
@@ -93,7 +93,7 @@ export async function buildItem(
       summary: text ? text.slice(0, 420) : `Saved for later: ${fallbackTitle}`,
       excerpt: text.slice(0, 420),
       readableText: text,
-      coverImage: pickCoverImage(input.snapshot?.imageCandidates?.map((candidate) => ({ url: candidate, source: "snapshot_image" }))),
+      coverImage: selectCoverImageFromCandidates(input.snapshot?.imageCandidates),
       favicon: input.snapshot?.favicon,
       savedAt,
       updatedAt: now,
@@ -146,7 +146,7 @@ export function buildQueuedItem(
     summary: snapshotText ? snapshotText.slice(0, 420) : "Saved. Huntter is extracting content in the background.",
     excerpt: snapshotText.slice(0, 420),
     readableText: snapshotText,
-    coverImage: pickCoverImage(input.snapshot?.imageCandidates?.map((candidate) => ({ url: candidate, source: "snapshot_image" }))),
+    coverImage: selectCoverImageFromCandidates(input.snapshot?.imageCandidates),
     favicon: input.snapshot?.favicon,
     savedAt,
     updatedAt: now,

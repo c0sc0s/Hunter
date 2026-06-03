@@ -130,12 +130,12 @@ type CaptureEvent = {
 
 The app now uses source adapters instead of one universal parser.
 
-- `server/sources/genericWeb.ts`: public pages and extension snapshots, using substantial selected text as a fast path, bounded HTML fetch, then Defuddle, lazy Readability fallback, metadata, and shared cover scoring.
+- `server/sources/genericWeb.ts`: public pages and extension snapshots, using substantial selected text as a fast path, bounded HTML fetch, then Defuddle, lazy Readability fallback, metadata, and shared cover image selection.
 - `server/sources/contentHtml.ts`: DOMPurify-backed sanitizer for parser HTML before storage.
 - `server/sources/htmlFetch.ts`: public HTML fetch boundary for timeout, accepted content types, and max response bytes before parser work.
 - `server/sources/contentQuality.ts`: pure quality gate for candidate selection, confidence, extraction state, and fallback decisions.
 - `server/sources/extractedContentContract.ts`: runtime contract validation for Source Adapter output before item building.
-- `server/sources/coverImage.ts`: shared cover scoring for Source Adapters, queued snapshot previews, oEmbed thumbnails, and metadata images.
+- `server/sources/coverImage.ts`: shared cover image selection via `metascraper-image` for full HTML (OG / Twitter / JSON-LD / itemprop / article images) with a URL-quality guard, plus a sync candidate-list fallback for queued snapshot previews and source-specific overrides (oEmbed thumbnails, X post images).
 - `server/sources/pdf.ts`: PDF text extraction with `unpdf`, bounded PDF download size, and browser snapshot fallback.
 - `server/sources/video.ts`: YouTube/Vimeo oEmbed metadata extraction with transcript-aware partial state.
 - `server/contentSignals.ts`: deterministic summary, tag, and reading-time derivation from Canonical Content and Sanitized Content HTML.

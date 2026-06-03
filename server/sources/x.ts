@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import { contentHtmlFromSnapshot, contentHtmlFromText } from "./contentHtml";
 import { decideContentQuality } from "./contentQuality";
-import { isUsefulCoverImageUrl, pickCoverImage } from "./coverImage";
+import { isUsefulCoverImageUrl, selectCoverImage } from "./coverImage";
 import type { ExtractedContent, SourceAdapter } from "./types";
 import { cleanText, faviconFor, normalizeUrl } from "./url";
 
@@ -49,12 +49,12 @@ export const xAdapter: SourceAdapter = {
   }
 };
 
-function buildBrowserSnapshotTweet(
+async function buildBrowserSnapshotTweet(
   url: string,
   snapshot: Parameters<SourceAdapter["extract"]>[0]["snapshot"],
   text: string,
   extractor: string
-): ExtractedContent {
+): Promise<ExtractedContent> {
   const normalizedText = cleanText(text);
   const snapshotFields = extractSnapshotFields(snapshot?.html, url);
   const title = cleanText(snapshotFields.title || snapshot?.title) || "X post";
@@ -69,10 +69,12 @@ function buildBrowserSnapshotTweet(
     readableText: normalizedText,
     contentHtml:
       extractor === "browser_selection" ? contentHtmlFromText(normalizedText) : contentHtmlFromSnapshot(snapshot?.html, normalizedText),
-    coverImage: pickCoverImage([
-      { url: snapshotFields.image, source: "source_specific" },
-      ...(snapshot?.imageCandidates ?? []).map((candidate) => ({ url: candidate, source: "snapshot_image" as const }))
-    ]),
+    coverImage: await selectCoverImage({
+      url,
+      html: snapshot?.html,
+      snapshotCandidates: snapshot?.imageCandidates,
+      preferred: snapshotFields.image
+    }),
     favicon: snapshot?.favicon ?? faviconFor(url),
     author: snapshotFields.author,
     publishedAt: snapshot?.publishedAt ?? snapshotFields.publishedAt,

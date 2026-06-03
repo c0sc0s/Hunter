@@ -1,85 +1,69 @@
-export type CoverImageCandidateSource =
-  | "structured_data"
-  | "open_graph"
-  | "twitter_card"
-  | "parser"
-  | "article_image"
-  | "snapshot_image"
-  | "oembed"
-  | "source_specific";
+import createMetascraper from "metascraper";
+import metascraperImage from "metascraper-image";
 
-export type CoverImageCandidate = {
-  url?: string | null;
-  source: CoverImageCandidateSource;
+const metascraper = createMetascraper([metascraperImage()]);
+
+export type CoverImageInput = {
+  url: string;
+  html?: string;
+  snapshotCandidates?: Array<string | null | undefined>;
+  preferred?: string | null;
 };
 
-const sourceScores: Record<CoverImageCandidateSource, number> = {
-  oembed: 100,
-  structured_data: 95,
-  open_graph: 90,
-  twitter_card: 86,
-  source_specific: 82,
-  parser: 78,
-  article_image: 66,
-  snapshot_image: 42
-};
+export async function selectCoverImage(input: CoverImageInput): Promise<string | undefined> {
+  const preferred = normalizeUsefulImageUrl(input.preferred);
+  if (preferred) return preferred;
 
-const weakImagePattern =
-  /(?:^|[_.\-/%?=&])(avatar|badge|blank|favicon|icon|logo|placeholder|profile[_-]?image|sprite|transparent)(?:[_.\-/%?=&]|$)/i;
-const strongContentPattern = /(?:^|[_.\-/%?=&])(article|banner|card|cover|hero|media|og|photo|post|thumbnail|thumb)(?:[_.\-/%?=&]|$)/i;
+  const fromHtml = await selectCoverImageFromHtml(input.url, input.html);
+  if (fromHtml) return fromHtml;
 
-export function pickCoverImage(candidates: CoverImageCandidate[] | undefined): string | undefined {
-  const seen = new Set<string>();
-  return (candidates ?? [])
-    .map((candidate, index) => scoreCandidate(candidate, index))
-    .filter((candidate): candidate is ScoredCoverImageCandidate => Boolean(candidate))
-    .filter((candidate) => {
-      if (seen.has(candidate.url)) return false;
-      seen.add(candidate.url);
-      return true;
-    })
-    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.url;
+  return selectCoverImageFromCandidates(input.snapshotCandidates);
+}
+
+export function selectCoverImageFromCandidates(
+  candidates: Array<string | null | undefined> | undefined
+): string | undefined {
+  if (!candidates) return undefined;
+  for (const candidate of candidates) {
+    const useful = normalizeUsefulImageUrl(candidate);
+    if (useful) return useful;
+  }
+  return undefined;
 }
 
 export function isUsefulCoverImageUrl(value: string | undefined | null): value is string {
-  return Boolean(scoreUrl(value));
+  return Boolean(normalizeUsefulImageUrl(value));
 }
 
-function scoreCandidate(candidate: CoverImageCandidate, index: number): ScoredCoverImageCandidate | undefined {
-  const urlScore = scoreUrl(candidate.url);
-  if (!urlScore) return undefined;
-
-  return {
-    url: normalizeImageUrl(candidate.url),
-    score: sourceScores[candidate.source] + urlScore,
-    index
-  };
-}
-
-function scoreUrl(value: string | undefined | null): number {
-  const normalized = normalizeImageUrl(value);
-  if (!normalized) return 0;
-  const parsed = new URL(normalized);
-  const path = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return 0;
-  if (weakImagePattern.test(path)) return 0;
-  if (path.endsWith(".svg") || path.includes(".svg?")) return 0;
-  if (path.includes("1x1") || path.includes("pixel")) return 0;
-
-  return strongContentPattern.test(path) ? 24 : 10;
-}
-
-function normalizeImageUrl(value: string | undefined | null): string {
-  if (!value) return "";
+async function selectCoverImageFromHtml(url: string, html: string | undefined): Promise<string | undefined> {
+  if (!html) return undefined;
   try {
-    return new URL(value).toString();
+    const { image } = await metascraper({ url, html });
+    return normalizeUsefulImageUrl(image);
   } catch {
-    return "";
+    return undefined;
   }
 }
 
-type ScoredCoverImageCandidate = {
-  url: string;
-  score: number;
-  index: number;
-};
+// Metascraper validates URLs and absolutizes them, but it still happily returns
+// favicons, sprites, avatars, or tracking pixels when a site only exposes those.
+// This filter is the final guard for both the metascraper result and any
+// snapshot-only fallback URLs.
+const weakImagePattern =
+  /(?:^|[_.\-/%?=&])(avatar|badge|blank|favicon|icon|logo|placeholder|profile[_-]?image|sprite|transparent)(?:[_.\-/%?=&]|$)/i;
+
+function normalizeUsefulImageUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+  const path = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
+  if (weakImagePattern.test(path)) return undefined;
+  if (path.endsWith(".svg") || path.includes(".svg?")) return undefined;
+  if (path.includes("1x1") || path.includes("pixel")) return undefined;
+  return parsed.toString();
+}

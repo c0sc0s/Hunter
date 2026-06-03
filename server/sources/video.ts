@@ -1,5 +1,5 @@
 import type { ExtractedContent, SourceAdapter } from "./types";
-import { pickCoverImage } from "./coverImage";
+import { selectCoverImage } from "./coverImage";
 import { cleanText, detectSourceType, faviconFor, normalizeUrl } from "./url";
 
 export const videoAdapter: SourceAdapter = {
@@ -17,7 +17,12 @@ export const videoAdapter: SourceAdapter = {
         title: oembed.title,
         author: oembed.author_name,
         provider: oembed.provider_name,
-        thumbnailUrl: oembed.thumbnail_url,
+        coverImage: await selectCoverImage({
+          url: normalizedUrl,
+          html: snapshot?.html,
+          snapshotCandidates: snapshot?.imageCandidates,
+          preferred: oembed.thumbnail_url
+        }),
         readableText: snapshot?.selectedText || snapshot?.excerpt || "",
         captureMethod: "source_adapter",
         sourceAccess: "public",
@@ -30,7 +35,11 @@ export const videoAdapter: SourceAdapter = {
       url: normalizedUrl,
       title: snapshot?.title,
       provider: snapshot?.siteName,
-      thumbnailUrl: pickCoverImage(snapshot?.imageCandidates?.map((candidate) => ({ url: candidate, source: "snapshot_image" }))),
+      coverImage: await selectCoverImage({
+        url: normalizedUrl,
+        html: snapshot?.html,
+        snapshotCandidates: snapshot?.imageCandidates
+      }),
       readableText: snapshotText,
       captureMethod: snapshot ? "extension_snapshot" : "url_fetch",
       sourceAccess: snapshot ? "browser_snapshot" : "public",
@@ -53,7 +62,7 @@ type VideoContentInput = {
   title?: string;
   author?: string;
   provider?: string;
-  thumbnailUrl?: string;
+  coverImage?: string;
   readableText?: string;
   captureMethod: ExtractedContent["captureMethod"];
   sourceAccess: ExtractedContent["sourceAccess"];
@@ -87,7 +96,7 @@ function buildVideoContent(input: VideoContentInput): ExtractedContent {
     sourceType: "video",
     excerpt: readableText || title,
     readableText,
-    coverImage: pickCoverImage([{ url: input.thumbnailUrl, source: "oembed" }]),
+    coverImage: input.coverImage,
     favicon: faviconFor(input.url),
     author: cleanText(input.author) || undefined,
     confidence: input.title ? 0.58 : readableText ? 0.42 : 0.24,
