@@ -1398,6 +1398,71 @@
         }
       ],
       "next": "Add Feishu token refresh and block/image/attachment import before broadening sync coverage."
+    },
+    {
+      "id": "feishu-token-refresh-before-sync",
+      "title": "Refresh Feishu access tokens before manual sync",
+      "status": "done",
+      "scope": [
+        "Detect expired or near-expired Feishu access tokens before manual connector sync.",
+        "Use the stored encrypted refresh token with the official OAuth token endpoint.",
+        "Rotate and re-encrypt both access and refresh tokens after a successful refresh.",
+        "Fail loudly with reconnect guidance when refresh credentials are missing or expired.",
+        "Use the refreshed access token for subsequent docx raw-content and wiki get_node calls.",
+        "Keep token material server-only and absent from public connector APIs."
+      ],
+      "outOfScope": [
+        "Background sync scheduling",
+        "Permission drift refresh",
+        "Non-docx wiki object import",
+        "Block-level rendering",
+        "Image and attachment import"
+      ],
+      "dependencies": ["feishu-oauth-foundation", "feishu-docx-raw-content-sync", "feishu-wiki-docx-resolution"],
+      "definitionOfDone": [
+        "`POST /api/connectors/feishu/sync` refreshes expired or near-expired access tokens before provider API calls.",
+        "Refreshed credentials replace old encrypted access and refresh tokens in the repository.",
+        "Subsequent docx raw-content and wiki get_node requests use the refreshed access token.",
+        "`pnpm smoke:api` covers expired-token detection, refresh-token exchange, credential rotation, and connector import with refreshed authorization.",
+        "`pnpm verify` passes with the Feishu token refresh slice included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Manual Feishu sync rotates an expired stored access token through the mocked official OAuth token endpoint and imports docx/wiki content with the refreshed access token."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The token refresh credential path and sync integration compile cleanly."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Sync-time Feishu token refresh remains compatible with the full local gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/connectorAuth/feishuOAuth.ts",
+            "server/connectorImport/feishuImport.ts",
+            "server/connectors.ts",
+            "scripts/smoke-api.ts",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "docs/DATABASE_DESIGN.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Smoke coverage mocks the Feishu OAuth refresh, wiki get_node, and raw-content HTTP responses. The implementation refreshes tokens before manual sync, but does not schedule background sync, refresh permissions, import non-docx wiki objects, or import blocks/images/attachments.",
+          "notes": "Manual Feishu sync now asks the OAuth module for a fresh access token. Expired or near-expired stored access tokens are refreshed through the official OAuth token endpoint, new one-time refresh tokens replace old encrypted credentials, and provider imports continue with the refreshed access token."
+        }
+      ],
+      "next": "Add Feishu block/image/attachment import and permission refresh before broadening sync coverage."
     }
   ]
 }

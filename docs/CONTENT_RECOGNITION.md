@@ -119,7 +119,7 @@ This gives private, logged-in, and dynamic pages better Canonical Content withou
 ## Source Rules
 
 - Generic public pages: selected text fast path -> bounded HTML fetch -> Defuddle -> Readability -> snapshot -> metadata.
-- Feishu/Lark: browser snapshot can produce `ready` when substantial visible content is captured, or `partial` when limited; OAuth authorization plus direct docx and wiki-node-to-docx raw-content import is available, while non-docx wiki import and full native block fidelity remain future connector work.
+- Feishu/Lark: browser snapshot can produce `ready` when substantial visible content is captured, or `partial` when limited; OAuth authorization, sync-time access-token refresh, direct docx, and wiki-node-to-docx raw-content import are available, while non-docx wiki import and full native block fidelity remain future connector work.
 - X/Twitter: public oEmbed, selected text, or visible browser snapshot content; private bookmarks, full author fidelity, and thread expansion require a Connector.
 - PDFs: first-class Source Adapter using `unpdf`; text PDFs can become `ready`, limited/scanned PDFs remain `partial` or `failed` until OCR exists.
 - Videos: first-class Source Adapter using public oEmbed for metadata; transcripts remain future work.

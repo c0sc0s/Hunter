@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { ConnectorSyncResponse, LibraryItem } from "../../shared/types";
 import { buildCaptureEvent } from "../captureEvents";
-import { openConnectorSecret } from "../connectorSecretBox";
+import { getFreshFeishuAccessToken } from "../connectorAuth/feishuOAuth";
 import { enrichContent } from "../enrich";
 import { buildConnectorRecord } from "../connectors";
 import { buildContentHash, contentRecognitionVersion } from "../recognitionMetadata";
@@ -69,7 +69,7 @@ export async function syncFeishuConnector(repository: LibraryRepository): Promis
     };
   }
 
-  const accessToken = openConnectorSecret(credential.accessTokenCiphertext);
+  const accessToken = await getFreshFeishuAccessToken(repository, credential);
   const counters: SyncCounters = { imported: 0, skipped: 0, failed: 0 };
   const failures: string[] = [];
 

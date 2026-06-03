@@ -221,4 +221,4 @@ The current JSON implementation can remain as one Adapter. SQLite/Postgres becom
 10. Normalize canonical URLs by stripping tracking parameters before dedupe. Done for JSON and SQLite adapters through shared recognition code.
 11. Store original capture input for refresh/reprocessing while stripping it from public API responses. Done for JSON and SQLite adapters.
 12. Add Capture Events for queued captures, recognition completion, manual refresh, and recognition failure. Done for JSON and SQLite adapters.
-13. Implement Feishu OAuth authorization against connector credentials. Done for authorization, token storage, direct docx import, and wiki-node-to-docx import; token refresh and block-level fidelity remain next.
+13. Implement Feishu OAuth authorization against connector credentials. Done for authorization, token storage, sync-time token refresh, direct docx import, and wiki-node-to-docx import; block-level fidelity and permission refresh remain next.

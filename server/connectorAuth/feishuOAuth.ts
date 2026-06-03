@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { ConnectorMutationResponse, ConnectorOAuthStartResponse, ConnectorProvider } from "../../shared/types";
 import { buildConnectorRecord } from "../connectors";
-import { sealConnectorSecret } from "../connectorSecretBox";
+import { openConnectorSecret, sealConnectorSecret } from "../connectorSecretBox";
 import type { ConnectorCredentialRecord, LibraryRepository } from "../repositories/types";
 import { consumeOAuthState, storeOAuthState } from "./oauthState";
 
@@ -10,6 +10,7 @@ const authorizeUrl = "https://accounts.feishu.cn/open-apis/authen/v1/authorize";
 const tokenUrl = "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
 const userInfoUrl = "https://open.feishu.cn/open-apis/authen/v1/user_info";
 const defaultScopes = ["offline_access", "docx:document:readonly", "wiki:wiki:readonly"];
+const tokenRefreshSkewMs = 5 * 60 * 1000;
 
 type FeishuOAuthConfig = {
   clientId: string;
@@ -24,6 +25,7 @@ type FeishuTokenData = {
   token_type?: string;
   expires_in?: number;
   refresh_expires_in?: number;
+  refresh_token_expires_in?: number;
   scope?: string;
 };
 
@@ -103,7 +105,37 @@ export async function completeFeishuOAuth(
   return { connector };
 }
 
+export async function getFreshFeishuAccessToken(repository: LibraryRepository, credential: ConnectorCredentialRecord): Promise<string> {
+  if (!shouldRefreshAccessToken(credential.accessTokenExpiresAt)) {
+    return openConnectorSecret(credential.accessTokenCiphertext);
+  }
+
+  if (!credential.refreshTokenCiphertext) {
+    throw new Error("Feishu access token needs refresh, but no refresh token is stored. Reconnect Feishu / Lark.");
+  }
+
+  if (isExpired(credential.refreshTokenExpiresAt)) {
+    throw new Error("Feishu refresh token has expired. Reconnect Feishu / Lark.");
+  }
+
+  const config = getFeishuAppCredentials();
+  const refreshToken = openConnectorSecret(credential.refreshTokenCiphertext);
+  const refreshedToken = await refreshUserAccessToken(config, refreshToken);
+  const now = new Date().toISOString();
+  const refreshedCredential = await repository.upsertConnectorCredential(buildCredentialRecord(refreshedToken, now));
+  return openConnectorSecret(refreshedCredential.accessTokenCiphertext);
+}
+
 function getFeishuOAuthConfig(origin: string): FeishuOAuthConfig {
+  const credentials = getFeishuAppCredentials();
+  return {
+    ...credentials,
+    redirectUri: process.env.HUNTTER_FEISHU_REDIRECT_URI?.trim() || `${origin}/api/connectors/feishu/oauth/callback`,
+    scopes: parseScopes(process.env.HUNTTER_FEISHU_SCOPES)
+  };
+}
+
+function getFeishuAppCredentials(): Pick<FeishuOAuthConfig, "clientId" | "clientSecret"> {
   const missing: string[] = [];
   const clientId = process.env.HUNTTER_FEISHU_CLIENT_ID?.trim();
   const clientSecret = process.env.HUNTTER_FEISHU_CLIENT_SECRET?.trim();
@@ -113,9 +145,7 @@ function getFeishuOAuthConfig(origin: string): FeishuOAuthConfig {
 
   return {
     clientId,
-    clientSecret,
-    redirectUri: process.env.HUNTTER_FEISHU_REDIRECT_URI?.trim() || `${origin}/api/connectors/feishu/oauth/callback`,
-    scopes: parseScopes(process.env.HUNTTER_FEISHU_SCOPES)
+    clientSecret
   };
 }
 
@@ -151,13 +181,53 @@ async function exchangeAuthorizationCode(
     throw new Error("Feishu OAuth token response did not include an access token");
   }
 
+  const refreshExpiresIn = refreshExpirySeconds(data);
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
     tokenType: data.token_type ?? "Bearer",
     scope: data.scope,
     accessTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000).toISOString() : undefined,
-    refreshTokenExpiresAt: data.refresh_expires_in ? new Date(Date.now() + data.refresh_expires_in * 1000).toISOString() : undefined
+    refreshTokenExpiresAt: refreshExpiresIn ? new Date(Date.now() + refreshExpiresIn * 1000).toISOString() : undefined
+  };
+}
+
+async function refreshUserAccessToken(
+  config: Pick<FeishuOAuthConfig, "clientId" | "clientSecret">,
+  refreshToken: string
+): Promise<{
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  scope?: string;
+  accessTokenExpiresAt?: string;
+  refreshTokenExpiresAt?: string;
+}> {
+  const response = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "refresh_token",
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: refreshToken
+    })
+  });
+
+  const payload = await parseJsonResponse(response, "Feishu OAuth token refresh failed");
+  const data = readTokenData(payload);
+  if (!data.access_token) {
+    throw new Error("Feishu OAuth refresh response did not include an access token");
+  }
+
+  const refreshExpiresIn = refreshExpirySeconds(data);
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    tokenType: data.token_type ?? "Bearer",
+    scope: data.scope,
+    accessTokenExpiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000).toISOString() : undefined,
+    refreshTokenExpiresAt: refreshExpiresIn ? new Date(Date.now() + refreshExpiresIn * 1000).toISOString() : undefined
   };
 }
 
@@ -238,6 +308,18 @@ function asRecord(value: unknown): Record<string, unknown> {
 function parseScopes(value: string | undefined): string[] {
   const scopes = value?.split(/[,\s]+/).filter(Boolean);
   return scopes?.length ? scopes : defaultScopes;
+}
+
+function shouldRefreshAccessToken(expiresAt: string | undefined): boolean {
+  return expiresAt ? Date.parse(expiresAt) <= Date.now() + tokenRefreshSkewMs : false;
+}
+
+function isExpired(expiresAt: string | undefined): boolean {
+  return expiresAt ? Date.parse(expiresAt) <= Date.now() : false;
+}
+
+function refreshExpirySeconds(data: FeishuTokenData): number | undefined {
+  return data.refresh_token_expires_in ?? data.refresh_expires_in;
 }
 
 function randomToken(byteLength: number): string {

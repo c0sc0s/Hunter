@@ -13,6 +13,7 @@ delete process.env.HUNTTER_FEISHU_SCOPES;
 
 const { app } = await import("../server/index");
 const { libraryRepository } = await import("../server/repository");
+const { openConnectorSecret } = await import("../server/connectorSecretBox");
 
 const server = await new Promise<Server>((resolve) => {
   const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
@@ -93,7 +94,7 @@ try {
           refresh_token: "u-test-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
-          refresh_expires_in: 7200,
+          refresh_token_expires_in: 7200,
           scope: "offline_access docx:document:readonly wiki:wiki:readonly"
         }
       });
@@ -124,6 +125,15 @@ try {
   assert.equal(credential.scope, "offline_access docx:document:readonly wiki:wiki:readonly");
   assert.equal(credential.accessTokenCiphertext.includes("u-test-access-token"), false);
   assert.equal(credential.refreshTokenCiphertext?.includes("u-test-refresh-token"), false);
+  assert.ok(credential.accessTokenExpiresAt && Date.parse(credential.accessTokenExpiresAt) > Date.now());
+  assert.ok(credential.refreshTokenExpiresAt && Date.parse(credential.refreshTokenExpiresAt) > Date.now());
+
+  await libraryRepository.upsertConnectorCredential({
+    ...credential,
+    accessTokenExpiresAt: new Date(Date.now() - 1000).toISOString(),
+    refreshTokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date().toISOString()
+  });
 
   const directFeishuDocUrl = "https://bytedance.larkoffice.com/docx/doxbcmEtbFrbbq10nPNu8gO1F3b";
   const directFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
@@ -145,10 +155,29 @@ try {
     (_, index) =>
       `Feishu connector imported paragraph ${index + 1} proves raw content can replace URL-only connector-needed items without browser snapshots.`
   ).join(" ");
+  let sawFeishuTokenRefresh = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
+      sawFeishuTokenRefresh = true;
+      const body = JSON.parse(String(init?.body)) as Record<string, string>;
+      assert.equal(body.grant_type, "refresh_token");
+      assert.equal(body.client_id, "cli_a_test");
+      assert.equal(body.client_secret, "feishu-secret");
+      assert.equal(body.refresh_token, "u-test-refresh-token");
+      return jsonResponse({
+        code: 0,
+        access_token: "u-refreshed-access-token",
+        refresh_token: "u-rotated-refresh-token",
+        token_type: "Bearer",
+        expires_in: 3600,
+        refresh_token_expires_in: 7200,
+        scope: "offline_access docx:document:readonly wiki:wiki:readonly"
+      });
+    }
+
     if (requestUrl === "https://open.feishu.cn/open-apis/docx/v1/documents/doxbcmEtbFrbbq10nPNu8gO1F3b/raw_content?lang=0") {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
       return jsonResponse({ code: 0, data: { content: importedFeishuText } });
     }
 
@@ -170,9 +199,20 @@ try {
     assert.equal(feishuImportSync.skipped, 0);
     assert.equal(feishuImportSync.failed, 0);
     assert.match(feishuImportSync.message ?? "", /imported 1/i);
+    assert.equal(sawFeishuTokenRefresh, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
+
+  const refreshedCredential = await libraryRepository.getConnectorCredential("feishu");
+  assert.ok(refreshedCredential);
+  assert.equal(openConnectorSecret(refreshedCredential.accessTokenCiphertext), "u-refreshed-access-token");
+  assert.ok(refreshedCredential.refreshTokenCiphertext);
+  assert.equal(openConnectorSecret(refreshedCredential.refreshTokenCiphertext), "u-rotated-refresh-token");
+  assert.equal(refreshedCredential.accessTokenCiphertext.includes("u-refreshed-access-token"), false);
+  assert.equal(refreshedCredential.refreshTokenCiphertext.includes("u-rotated-refresh-token"), false);
+  assert.ok(refreshedCredential.accessTokenExpiresAt && Date.parse(refreshedCredential.accessTokenExpiresAt) > Date.now());
+  assert.ok(refreshedCredential.refreshTokenExpiresAt && Date.parse(refreshedCredential.refreshTokenExpiresAt) > Date.now());
 
   const importedFeishu = await waitForItem<{
     id: string;
@@ -242,7 +282,7 @@ try {
       parsedUrl.pathname === "/open-apis/wiki/v2/spaces/get_node" &&
       parsedUrl.searchParams.get("token") === "WikiNodeTokenForDocx123"
     ) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
       return jsonResponse({
         code: 0,
         data: {
@@ -256,7 +296,7 @@ try {
     }
 
     if (requestUrl === `https://open.feishu.cn/open-apis/docx/v1/documents/${resolvedWikiDocumentId}/raw_content?lang=0`) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
       return jsonResponse({ code: 0, data: { content: importedWikiFeishuText } });
     }
 

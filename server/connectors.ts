@@ -11,10 +11,11 @@ export const connectorDefinitions: ConnectorDefinition[] = [
       "OAuth user authorization",
       "Direct docx raw-content import",
       "Wiki docx raw-content import",
+      "Access-token refresh before sync",
       "Permission-aware refresh (next)"
     ],
     setupMessage:
-      "OAuth and manual docx/wiki raw-content import are available when Feishu app credentials are configured. Browser snapshot capture remains the fallback for unsupported Feishu surfaces."
+      "OAuth, encrypted token refresh, and manual docx/wiki raw-content import are available when Feishu app credentials are configured. Browser snapshot capture remains the fallback for unsupported Feishu surfaces."
   },
   {
     provider: "x",
