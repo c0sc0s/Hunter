@@ -889,7 +889,7 @@
           "notes": "The visual golden starts isolated API and web servers, seeds a ready browser-snapshot article and connector-needed Feishu URL, checks desktop library/detail/Capture Events/reader states, checks mobile library and sheet detail states, verifies screenshot dimensions and non-trivial PNG size, and asserts no page-level horizontal overflow."
         }
       ],
-      "next": "Add baseline image diffing only after screenshot artifacts prove stable enough across CI runners."
+      "next": "Completed by the platform visual baseline diff slice for committed platform baselines."
     },
     {
       "id": "lint-format-quality-gate",
@@ -983,6 +983,73 @@
         }
       ],
       "next": "Use the stricter quality gate for the next connector, toolbar automation, or visual baseline slice."
+    },
+    {
+      "id": "platform-visual-baseline-diff",
+      "title": "Compare visual golden screenshots against platform baselines",
+      "status": "done",
+      "scope": [
+        "Add PNG pixel diffing to `pnpm golden:visual` using committed platform-specific baselines.",
+        "Add `pnpm golden:visual:update` so baseline refresh is explicit.",
+        "Commit `win32-x64` baselines for desktop library, mobile library, and mobile detail screenshots.",
+        "Stabilize screenshot state by clearing hover/focus and hiding only dynamic time and duration values.",
+        "Write diff PNGs to `artifacts/visual/diffs/` when baseline comparison fails."
+      ],
+      "outOfScope": [
+        "Linux baseline generation without a Linux environment that has Playwright system dependencies.",
+        "Cross-browser visual matrix",
+        "Toolbar-bubble screenshots",
+        "Design-system token audit"
+      ],
+      "dependencies": ["visual-contract-golden", "zero-warning-lint-gate"],
+      "definitionOfDone": [
+        "`pnpm golden:visual:update` creates platform baseline PNGs.",
+        "`pnpm golden:visual` compares screenshots against committed baseline PNGs when present.",
+        "`pnpm check` and `pnpm lint` pass after visual diff changes.",
+        "Missing platform baselines require explicit `HUNTTER_VISUAL_ALLOW_MISSING_BASELINE=true` to avoid failing."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:visual:update",
+          "proves": "The baseline refresh path writes current-platform PNGs intentionally."
+        },
+        {
+          "command": "pnpm golden:visual",
+          "proves": "The current platform compares screenshots against committed visual baselines."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The visual baseline script and UI dynamic markers are type-safe."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The zero-warning lint gate remains clean after visual diffing changes."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Visual baseline comparison remains compatible with the full local verification gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm golden:visual:update", "pnpm golden:visual", "pnpm check", "pnpm lint", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "scripts/golden-visual.ts",
+            "src/App.tsx",
+            "tests/visual-baselines/win32-x64/desktop-library.png",
+            "tests/visual-baselines/win32-x64/mobile-library.png",
+            "tests/visual-baselines/win32-x64/mobile-detail.png",
+            ".github/workflows/verify.yml",
+            "package.json",
+            "pnpm-lock.yaml"
+          ],
+          "mockBoundary": "The committed baseline set currently covers win32-x64. GitHub Actions temporarily sets `HUNTTER_VISUAL_ALLOW_MISSING_BASELINE=true` until a linux-x64 baseline can be generated in an environment with Playwright system dependencies.",
+          "notes": "Visual golden now uses pixelmatch and pngjs to compare screenshots against platform baselines with zero allowed pixel difference by default. Dynamic dates and durations remain visible to users but are hidden during screenshots through explicit `data-visual-dynamic` markers."
+        }
+      ],
+      "next": "Generate and commit linux-x64 baselines from the GitHub Actions environment, then remove the temporary missing-baseline allowance."
     }
   ]
 }

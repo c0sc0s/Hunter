@@ -43,3 +43,5 @@ jobs:
         run: xvfb-run -a pnpm verify
         env:
           CI: true
+          # Windows baselines are committed first. Remove this after linux-x64 baselines are generated from this workflow environment.
+          HUNTTER_VISUAL_ALLOW_MISSING_BASELINE: true

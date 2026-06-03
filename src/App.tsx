@@ -783,7 +783,9 @@ function ActivityLog({ className, entries }: { className?: string; entries: Acti
           <div key={entry.id} className="grid gap-0.5 border-l border-border pl-2">
             <div className="flex items-center gap-2">
               <Badge variant={entry.kind === "command" ? "default" : "secondary"}>{entry.kind}</Badge>
-              <span className="font-mono text-[11px] text-muted-foreground">{formatTime(entry.at)}</span>
+              <span className="font-mono text-[11px] text-muted-foreground" data-visual-dynamic>
+                {formatTime(entry.at)}
+              </span>
             </div>
             <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{entry.message}</p>
           </div>
@@ -855,14 +857,18 @@ function CaptureEventsPanel({
                 <Badge variant={event.resultState === "failed" || event.resultState === "needs_connector" ? "destructive" : "secondary"}>
                   {event.resultState}
                 </Badge>
-                <span className="font-mono text-[11px] text-muted-foreground">{formatTime(event.createdAt)}</span>
+                <span className="font-mono text-[11px] text-muted-foreground" data-visual-dynamic>
+                  {formatTime(event.createdAt)}
+                </span>
               </div>
               <div className="truncate text-xs font-medium" title={event.sourceUrl}>
                 {event.sourceType ? sourceLabel(event.sourceType) : "Source"} / {event.captureMethod}
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
                 <span>{formatBytes(event.snapshotBytes)}</span>
-                {event.recognitionDurationMs !== undefined ? <span>{formatDuration(event.recognitionDurationMs)}</span> : null}
+                {event.recognitionDurationMs !== undefined ? (
+                  <span data-visual-dynamic>{formatDuration(event.recognitionDurationMs)}</span>
+                ) : null}
               </div>
               {event.error ? <p className="line-clamp-2 text-xs text-destructive">{event.error}</p> : null}
             </div>
@@ -1024,13 +1030,13 @@ function ItemDetail({
       <DetailSection icon={Clock} title="Metadata">
         <dl className="grid grid-cols-2 gap-3 text-sm">
           <Meta label="Type" value={sourceLabel(item.sourceType)} />
-          <Meta label="Saved" value={formatDate(item.savedAt)} />
+          <Meta label="Saved" value={formatDate(item.savedAt)} visualDynamic />
           <Meta label="Confidence" value={`${Math.round(item.confidence * 100)}%`} />
           <Meta label="Extractor" value={item.extractor ?? item.captureMethod ?? "unknown"} />
           {item.recognitionDurationMs !== undefined ? (
-            <Meta label="Recognition" value={formatDuration(item.recognitionDurationMs)} />
+            <Meta label="Recognition" value={formatDuration(item.recognitionDurationMs)} visualDynamic />
           ) : null}
-          {item.recognitionTiming ? <Meta label="Phases" value={formatRecognitionTiming(item.recognitionTiming)} /> : null}
+          {item.recognitionTiming ? <Meta label="Phases" value={formatRecognitionTiming(item.recognitionTiming)} visualDynamic /> : null}
         </dl>
       </DetailSection>
 
@@ -1229,11 +1235,11 @@ function DetailSection({ children, icon: Icon, title }: { children: React.ReactN
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
+function Meta({ label, value, visualDynamic = false }: { label: string; value: string; visualDynamic?: boolean }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-1 truncate font-mono font-medium" title={value}>
+      <dd className="mt-1 truncate font-mono font-medium" data-visual-dynamic={visualDynamic ? true : undefined} title={value}>
         {value}
       </dd>
     </div>

@@ -31,6 +31,7 @@ pnpm format:check
 pnpm golden:browser
 pnpm golden:extension
 pnpm golden:visual
+pnpm golden:visual:update
 ```
 
 GitHub Actions runs the same `pnpm verify` gate on pull requests and pushes to `main`. The workflow uses Node 22, pnpm 10.33.0, and Xvfb so the installed Chrome extension golden can launch headed Chromium in CI. `pnpm verify` includes TypeScript, ESLint, Prettier, fixtures, API smoke, browser golden, extension golden, visual golden, and build.
@@ -43,7 +44,7 @@ pnpm check
 pnpm build
 ```
 
-`pnpm test` currently covers deterministic content signals, recognition metadata and phase timing, Capture Events, content quality rules, sanitized HTML, bounded HTML fetch, cover image scoring, Extracted Content contract validation, content recognition fixtures, source adapter contracts, focused extension snapshots, connector state, durable recognition jobs, and SQLite Repository behavior. `pnpm golden:browser` verifies the sandboxed reader view for captured Canonical Content HTML, `pnpm golden:extension` loads the real Chrome extension into Chromium to verify installed extension capture, and `pnpm golden:visual` checks desktop/mobile visual contracts while writing screenshots to `artifacts/visual/`.
+`pnpm test` currently covers deterministic content signals, recognition metadata and phase timing, Capture Events, content quality rules, sanitized HTML, bounded HTML fetch, cover image scoring, Extracted Content contract validation, content recognition fixtures, source adapter contracts, focused extension snapshots, connector state, durable recognition jobs, and SQLite Repository behavior. `pnpm golden:browser` verifies the sandboxed reader view for captured Canonical Content HTML, `pnpm golden:extension` loads the real Chrome extension into Chromium to verify installed extension capture, and `pnpm golden:visual` checks desktop/mobile visual contracts while writing screenshots to `artifacts/visual/` and comparing committed platform baselines when present. Use `pnpm golden:visual:update` to intentionally refresh the current platform's baseline PNGs.
 
 ## Chrome Extension
 

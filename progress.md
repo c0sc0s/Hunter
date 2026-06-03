@@ -29,6 +29,7 @@ Last updated: 2026-06-03
 - Installed Chrome extension golden journey is executable through `pnpm golden:extension` and is included in `pnpm verify`.
 - The installed extension golden now covers both background save messaging and visible popup Save clicks.
 - Visual golden journey is executable through `pnpm golden:visual` and is included in `pnpm verify`.
+- Visual golden now compares against committed platform-specific PNG baselines when a baseline exists; `win32-x64` baselines are committed.
 - ESLint and Prettier are configured and included in `pnpm verify`.
 - ESLint now runs with `--max-warnings=0`; the quality gate fails on any lint warning.
 - GitHub Actions now runs the full `pnpm verify` gate for pull requests and pushes to `main`.
@@ -85,14 +86,15 @@ Last updated: 2026-06-03
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
 - Latest run tightened `pnpm lint` to zero warnings by refactoring App data-load callbacks and scoping shadcn primitive fast-refresh export handling.
+- Latest run added platform visual baseline diffing with `pnpm golden:visual:update`, committed `win32-x64` baselines, and zero-warning static checks.
 - Note: Node emitted an experimental warning for `node:sqlite`; verification still passed.
 
 ## Open Gaps
 
 - Feishu and X connectors are not implemented.
 - Chrome toolbar bubble automation is not yet executable.
-- Pixel-perfect baseline image diffing is not yet configured; current visual coverage is a screenshot contract.
+- `linux-x64` visual baselines are not committed yet; GitHub Actions temporarily allows missing platform baselines until they are generated from a CI-compatible Linux environment.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should add baseline image diffing, add toolbar-bubble automation, or start the first connector-specific implementation slice.
+All current harness features are `done`. The next hardening step should generate and commit `linux-x64` visual baselines, add toolbar-bubble automation, or start the first connector-specific implementation slice.

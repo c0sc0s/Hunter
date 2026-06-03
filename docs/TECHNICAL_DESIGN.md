@@ -192,7 +192,9 @@ ESLint uses the flat config format in `eslint.config.js` for TypeScript, React, 
 
 The CI workflow uses Node 22 because the SQLite adapter currently depends on Node's built-in `node:sqlite`. It installs Playwright Chromium with system dependencies and runs verification under Xvfb so the installed Manifest V3 extension golden can launch headed Chromium.
 
-`pnpm golden:visual` starts isolated local API and web servers, seeds deterministic ready and connector-needed items, checks desktop and mobile layouts, verifies reader iframe content, asserts no page-level horizontal overflow, and writes PNG screenshots to `artifacts/visual/` for human review. It is a visual contract, not a pixel-perfect baseline diff.
+`pnpm golden:visual` starts isolated local API and web servers, seeds deterministic ready and connector-needed items, checks desktop and mobile layouts, verifies reader iframe content, asserts no page-level horizontal overflow, and writes PNG screenshots to `artifacts/visual/` for human review. When a matching platform baseline exists under `tests/visual-baselines/<platform>/`, it compares screenshots with `pixelmatch` and writes failure diffs to `artifacts/visual/diffs/`. Baseline refresh is explicit through `pnpm golden:visual:update`. Dynamic date and duration values remain visible in the product UI but are hidden during visual screenshots through `data-visual-dynamic` markers so timing noise does not invalidate layout comparisons.
+
+The committed baseline set currently covers `win32-x64`. GitHub Actions temporarily allows a missing `linux-x64` baseline with `HUNTTER_VISUAL_ALLOW_MISSING_BASELINE=true`; remove that allowance after generating Linux baselines from the hosted runner environment.
 
 ## Reprocessing Strategy
 

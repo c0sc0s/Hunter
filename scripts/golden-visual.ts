@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import net from "node:net";
 import path from "node:path";
+import pixelmatch from "pixelmatch";
 import { chromium, type Locator, type Page } from "playwright";
+import { PNG } from "pngjs";
 import { createServer, type ViteDevServer } from "vite";
 import type { LibraryItem, LibraryResponse } from "../shared/types";
 
@@ -12,6 +14,12 @@ const webPort = await getFreePort();
 const apiBase = `http://127.0.0.1:${apiPort}`;
 const webBase = `http://127.0.0.1:${webPort}`;
 const artifactDir = path.resolve("artifacts", "visual");
+const baselineDir = path.resolve("tests", "visual-baselines", baselinePlatformKey());
+const diffDir = path.join(artifactDir, "diffs");
+const updateVisualBaselines = process.env.HUNTTER_UPDATE_VISUAL_BASELINES === "true" || process.argv.includes("--update-baselines");
+const allowMissingBaseline = process.env.HUNTTER_VISUAL_ALLOW_MISSING_BASELINE === "true";
+const maxDiffPixelRatio = Number(process.env.HUNTTER_VISUAL_MAX_DIFF_RATIO ?? "0");
+const visualPixelThreshold = Number(process.env.HUNTTER_VISUAL_PIXEL_THRESHOLD ?? "0");
 const articleTitle = "Visual Contract Article";
 const articleText = Array.from(
   { length: 9 },
@@ -49,10 +57,10 @@ try {
 
   const browser = await chromium.launch({ headless: true });
   try {
-    const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const desktop = await browser.newPage({ deviceScaleFactor: 1, viewport: { width: 1440, height: 1000 } });
     await exerciseDesktop(desktop);
 
-    const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
+    const mobile = await browser.newPage({ deviceScaleFactor: 1, viewport: { width: 390, height: 844 }, isMobile: true });
     await exerciseMobile(mobile);
   } finally {
     await browser.close();
@@ -171,12 +179,66 @@ async function assertScreenshot(
   fileName: string,
   expected: { minBytes: number; width: number; height: number }
 ): Promise<void> {
-  const buffer = await page.screenshot({ path: path.join(artifactDir, fileName), fullPage: false });
+  await stabilizePageForVisualDiff(page);
+  const buffer = await page.screenshot({
+    path: path.join(artifactDir, fileName),
+    animations: "disabled",
+    caret: "hide",
+    fullPage: false,
+    scale: "css"
+  });
   const dimensions = pngDimensions(buffer);
 
   assert.equal(dimensions.width, expected.width);
   assert.equal(dimensions.height, expected.height);
   assert.ok(buffer.byteLength >= expected.minBytes, `${fileName} should contain enough visual information`);
+  await assertVisualBaseline(fileName, buffer);
+}
+
+async function assertVisualBaseline(fileName: string, actualBuffer: Buffer): Promise<void> {
+  await mkdir(baselineDir, { recursive: true });
+  const baselinePath = path.join(baselineDir, fileName);
+
+  if (updateVisualBaselines) {
+    await writeFile(baselinePath, actualBuffer);
+    return;
+  }
+
+  let baselineBuffer: Buffer;
+  try {
+    baselineBuffer = await readFile(baselinePath);
+  } catch (error) {
+    if (allowMissingBaseline) {
+      console.warn(`visual baseline skipped for ${baselinePlatformKey()}: missing ${baselinePath}`);
+      return;
+    }
+
+    throw new Error(
+      `Missing visual baseline ${baselinePath}. Run \`pnpm golden:visual:update\` on ${baselinePlatformKey()} and commit the generated PNGs.`,
+      { cause: error }
+    );
+  }
+
+  const baseline = PNG.sync.read(baselineBuffer);
+  const actual = PNG.sync.read(actualBuffer);
+
+  assert.equal(actual.width, baseline.width, `${fileName} width should match baseline`);
+  assert.equal(actual.height, baseline.height, `${fileName} height should match baseline`);
+
+  const diff = new PNG({ width: actual.width, height: actual.height });
+  const diffPixels = pixelmatch(baseline.data, actual.data, diff.data, actual.width, actual.height, {
+    threshold: visualPixelThreshold
+  });
+  const maxDiffPixels = Math.floor(actual.width * actual.height * maxDiffPixelRatio);
+
+  if (diffPixels > maxDiffPixels) {
+    await mkdir(diffDir, { recursive: true });
+    const diffPath = path.join(diffDir, fileName);
+    await writeFile(diffPath, PNG.sync.write(diff));
+    throw new Error(
+      `${fileName} differs from ${baselinePath}: ${diffPixels} pixels changed, allowed ${maxDiffPixels}. Diff written to ${diffPath}.`
+    );
+  }
 }
 
 function pngDimensions(buffer: Buffer): { width: number; height: number } {
@@ -190,6 +252,38 @@ function pngDimensions(buffer: Buffer): { width: number; height: number } {
 async function resetArtifacts(): Promise<void> {
   await rm(artifactDir, { recursive: true, force: true });
   await mkdir(artifactDir, { recursive: true });
+}
+
+async function stabilizePageForVisualDiff(page: Page): Promise<void> {
+  const viewport = page.viewportSize();
+  await page.mouse.move(1, 1);
+  if (viewport) {
+    await page.mouse.move(viewport.width - 1, viewport.height - 1);
+  }
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  });
+  await page.addStyleTag({
+    content: `
+      *, *::before, *::after {
+        animation-duration: 0s !important;
+        animation-delay: 0s !important;
+        caret-color: transparent !important;
+        transition-duration: 0s !important;
+        transition-delay: 0s !important;
+      }
+
+      [data-visual-dynamic] {
+        visibility: hidden !important;
+      }
+    `
+  });
+}
+
+function baselinePlatformKey(): string {
+  return `${process.platform}-${process.arch}`;
 }
 
 async function getFreePort(): Promise<number> {
