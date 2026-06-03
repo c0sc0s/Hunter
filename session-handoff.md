@@ -10,7 +10,7 @@
 ## Current Session
 
 - Goal: continue hardening Huntter into a commercial-grade, source-first content recognition system without AI dependency.
-- Completed features: all 22 harness slices are `done`, through `lint-format-quality-gate`.
+- Completed features: all 23 harness slices are `done`, through `zero-warning-lint-gate`.
 - Verification: `pnpm verify` passed on 2026-06-03.
 
 ## Handoff Notes
@@ -26,8 +26,9 @@
 - `.github/workflows/verify.yml` runs `pnpm verify` on pull requests and pushes to `main` with Node 22, pnpm 10.33.0, Playwright Chromium, and Xvfb.
 - `pnpm golden:visual` checks desktop/mobile visual contracts, no horizontal overflow, reader iframe visibility, Capture Events visibility, and writes screenshots to `artifacts/visual/`.
 - `pnpm verify` now includes ESLint and Prettier format checks before tests and golden journeys.
+- `pnpm lint` runs with `--max-warnings=0`; warning regressions now fail locally and in CI.
 - Browser-selected text and browser snapshot content produce sanitized Canonical Content HTML through `server/sources/contentHtml.ts`.
 
 ## Next Action
 
-All current harness features are done. The next useful slice is lint warning tightening, baseline image diffing, toolbar-bubble automation, or a connector-specific implementation.
+All current harness features are done. The next useful slice is baseline image diffing, toolbar-bubble automation, or a connector-specific implementation.

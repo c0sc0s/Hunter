@@ -17,7 +17,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CaptureEvent,
   CaptureEventsResponse,
@@ -96,6 +96,7 @@ const statusTabs: ItemStatus[] = ["unread", "reading", "read", "archived"];
 
 export function App() {
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const itemsRef = useRef<LibraryItem[]>([]);
   const [connectors, setConnectors] = useState<ConnectorView[]>([]);
   const [captureEvents, setCaptureEvents] = useState<CaptureEvent[]>([]);
   const [stats, setStats] = useState<LibraryStats>(emptyStats);
@@ -124,22 +125,6 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadConnectors();
-    void loadCaptureEvents();
-  }, []);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(
-      () => {
-        void loadItems({ showLoading: true });
-      },
-      query.trim() ? 250 : 0
-    );
-
-    return () => window.clearTimeout(timeout);
-  }, [filter, query, sourceFilter]);
-
-  useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -151,6 +136,10 @@ export function App() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, []);
 
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   const sourceCounts = useMemo(() => {
     return (Object.entries(stats.sources) as Array<[SourceType, number]>).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]);
   }, [stats.sources]);
@@ -161,53 +150,37 @@ export function App() {
     return items.find((item) => item.id === selectedId) ?? visibleItems[0] ?? items[0] ?? null;
   }, [items, selectedId, visibleItems]);
 
-  async function loadItems({
-    append = false,
-    offset = 0,
-    recordActivity = false,
-    showLoading = false
-  }: {
-    append?: boolean;
-    offset?: number;
-    recordActivity?: boolean;
-    showLoading?: boolean;
-  } = {}) {
-    if (showLoading) {
-      setLoading(true);
-    }
-    if (append) {
-      setLoadingMore(true);
-    }
-    setError(null);
-    try {
-      const response = await fetch(buildItemsUrl(offset));
-      if (!response.ok) throw new Error(`Failed to load library: HTTP ${response.status}`);
-      const data = (await response.json()) as LibraryResponse;
-      setItems((current) => (append ? mergeItems(current, data.items) : data.items));
-      setStats(data.stats);
-      setPage(data.page);
-      setSelectedId((current) => {
-        const nextItems = append ? mergeItems(items, data.items) : data.items;
-        return current && nextItems.some((item) => item.id === current) ? current : (nextItems[0]?.id ?? null);
-      });
-      if (recordActivity) {
-        pushActivity("system", `Loaded ${data.items.length} items. ${data.page.total} matched.`);
-        void loadConnectors();
-        void loadCaptureEvents();
-      }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load library");
-    } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
-      if (append) {
-        setLoadingMore(false);
-      }
-    }
-  }
+  const pushActivity = useCallback((kind: ActivityKind, message: string) => {
+    setActivity((current) =>
+      [
+        {
+          id: crypto.randomUUID(),
+          kind,
+          message,
+          at: new Date().toISOString()
+        },
+        ...current
+      ].slice(0, 8)
+    );
+  }, []);
 
-  async function loadConnectors() {
+  const buildItemsUrl = useCallback(
+    (offset: number) => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset)
+      });
+
+      if (filter !== "all") params.set("filter", filter);
+      if (sourceFilter !== "all") params.set("sourceType", sourceFilter);
+      if (query.trim()) params.set("q", query.trim());
+
+      return `/api/items?${params.toString()}`;
+    },
+    [filter, query, sourceFilter]
+  );
+
+  const loadConnectors = useCallback(async () => {
     try {
       const response = await fetch("/api/connectors");
       if (!response.ok) throw new Error(`Failed to load connectors: HTTP ${response.status}`);
@@ -216,37 +189,91 @@ export function App() {
     } catch (connectorError) {
       pushActivity("system", connectorError instanceof Error ? connectorError.message : "Could not load connectors");
     }
-  }
+  }, [pushActivity]);
 
-  async function loadCaptureEvents(recordActivity = false) {
-    setLoadingCaptureEvents(true);
-    try {
-      const response = await fetch("/api/capture-events?limit=8");
-      if (!response.ok) throw new Error(`Failed to load capture events: HTTP ${response.status}`);
-      const data = (await response.json()) as CaptureEventsResponse;
-      setCaptureEvents(data.events);
-      if (recordActivity) {
-        pushActivity("system", `Loaded ${data.events.length} capture events.`);
+  const loadCaptureEvents = useCallback(
+    async (recordActivity = false) => {
+      setLoadingCaptureEvents(true);
+      try {
+        const response = await fetch("/api/capture-events?limit=8");
+        if (!response.ok) throw new Error(`Failed to load capture events: HTTP ${response.status}`);
+        const data = (await response.json()) as CaptureEventsResponse;
+        setCaptureEvents(data.events);
+        if (recordActivity) {
+          pushActivity("system", `Loaded ${data.events.length} capture events.`);
+        }
+      } catch (captureEventError) {
+        pushActivity("system", captureEventError instanceof Error ? captureEventError.message : "Could not load capture events");
+      } finally {
+        setLoadingCaptureEvents(false);
       }
-    } catch (captureEventError) {
-      pushActivity("system", captureEventError instanceof Error ? captureEventError.message : "Could not load capture events");
-    } finally {
-      setLoadingCaptureEvents(false);
-    }
-  }
+    },
+    [pushActivity]
+  );
 
-  function buildItemsUrl(offset: number) {
-    const params = new URLSearchParams({
-      limit: String(pageSize),
-      offset: String(offset)
-    });
+  const loadItems = useCallback(
+    async ({
+      append = false,
+      offset = 0,
+      recordActivity = false,
+      showLoading = false
+    }: {
+      append?: boolean;
+      offset?: number;
+      recordActivity?: boolean;
+      showLoading?: boolean;
+    } = {}) => {
+      if (showLoading) {
+        setLoading(true);
+      }
+      if (append) {
+        setLoadingMore(true);
+      }
+      setError(null);
+      try {
+        const response = await fetch(buildItemsUrl(offset));
+        if (!response.ok) throw new Error(`Failed to load library: HTTP ${response.status}`);
+        const data = (await response.json()) as LibraryResponse;
+        const nextItems = append ? mergeItems(itemsRef.current, data.items) : data.items;
+        itemsRef.current = nextItems;
+        setItems(nextItems);
+        setStats(data.stats);
+        setPage(data.page);
+        setSelectedId((current) => (current && nextItems.some((item) => item.id === current) ? current : (nextItems[0]?.id ?? null)));
+        if (recordActivity) {
+          pushActivity("system", `Loaded ${data.items.length} items. ${data.page.total} matched.`);
+          void loadConnectors();
+          void loadCaptureEvents();
+        }
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Could not load library");
+      } finally {
+        if (showLoading) {
+          setLoading(false);
+        }
+        if (append) {
+          setLoadingMore(false);
+        }
+      }
+    },
+    [buildItemsUrl, loadCaptureEvents, loadConnectors, pushActivity]
+  );
 
-    if (filter !== "all") params.set("filter", filter);
-    if (sourceFilter !== "all") params.set("sourceType", sourceFilter);
-    if (query.trim()) params.set("q", query.trim());
+  useEffect(() => {
+    void loadConnectors();
+    void loadCaptureEvents();
+  }, [loadCaptureEvents, loadConnectors]);
 
-    return `/api/items?${params.toString()}`;
-  }
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () => {
+        void loadItems({ showLoading: true });
+      },
+      query.trim() ? 250 : 0
+    );
+
+    return () => window.clearTimeout(timeout);
+  }, [loadItems, query]);
 
   async function saveItem(event: FormEvent) {
     event.preventDefault();
@@ -312,20 +339,6 @@ export function App() {
     setItems((current) => current.map((item) => (item.id === id ? updated : item)));
     pushActivity("update", `Refreshed ${updated.title}`);
     await loadCaptureEvents();
-  }
-
-  function pushActivity(kind: ActivityKind, message: string) {
-    setActivity((current) =>
-      [
-        {
-          id: crypto.randomUUID(),
-          kind,
-          message,
-          at: new Date().toISOString()
-        },
-        ...current
-      ].slice(0, 8)
-    );
   }
 
   function runCommand(event: FormEvent) {

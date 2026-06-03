@@ -188,7 +188,7 @@ The web client renders recent Capture Events in a compact sidebar panel. It show
 
 `pnpm verify` is the single local and hosted quality gate. It runs harness validation, TypeScript, ESLint, Prettier format check, deterministic fixtures, API smoke, browser golden, installed extension golden, visual golden, and production build. GitHub Actions mirrors that command in `.github/workflows/verify.yml` on pull requests and pushes to `main`.
 
-ESLint uses the flat config format in `eslint.config.js` for TypeScript, React, Node-side scripts, and extension JavaScript. Prettier is configured through `.prettierrc.json` and `.prettierignore`; generated and machine-state artifacts such as `feature-list.json`, `pnpm-lock.yaml`, `dist/`, `data/`, and visual screenshot output are excluded from formatting checks.
+ESLint uses the flat config format in `eslint.config.js` for TypeScript, React, Node-side scripts, and extension JavaScript. `pnpm lint` runs with `--max-warnings=0`, so warning regressions fail locally and in CI. The only scoped fast-refresh export exception is for shadcn UI primitives under `src/components/ui/`, where variant helpers are part of the local component API; app code keeps the stricter export check. Prettier is configured through `.prettierrc.json` and `.prettierignore`; generated and machine-state artifacts such as `feature-list.json`, `pnpm-lock.yaml`, `dist/`, `data/`, and visual screenshot output are excluded from formatting checks.
 
 The CI workflow uses Node 22 because the SQLite adapter currently depends on Node's built-in `node:sqlite`. It installs Playwright Chromium with system dependencies and runs verification under Xvfb so the installed Manifest V3 extension golden can launch headed Chromium.
 

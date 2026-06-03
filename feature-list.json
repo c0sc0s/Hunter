@@ -930,11 +930,59 @@
           "commands": ["pnpm lint", "pnpm format:check", "pnpm verify"],
           "result": "passed",
           "artifacts": ["eslint.config.js", ".prettierrc.json", ".prettierignore", "package.json", "pnpm-lock.yaml"],
-          "mockBoundary": "Lint currently allows warnings for React hook dependency review and shadcn fast-refresh export patterns; it fails only on errors.",
+          "mockBoundary": "This slice introduced lint and format tooling but did not yet enforce a zero-warning lint budget.",
           "notes": "The quality gate now runs ESLint and Prettier before tests and golden journeys. Prettier ignores machine/generated artifacts such as feature-list, lockfile, dist, data, and visual artifacts. ESLint covers source, server, scripts, shared types, Vite config, and extension JavaScript with browser/chrome globals."
         }
       ],
-      "next": "Tighten warnings to zero only after refactoring App load callbacks and deciding how to handle shadcn variant exports."
+      "next": "Completed by the zero-warning lint gate slice."
+    },
+    {
+      "id": "zero-warning-lint-gate",
+      "title": "Tighten lint gate to zero warnings",
+      "status": "done",
+      "scope": [
+        "Run ESLint with `--max-warnings=0`.",
+        "Refactor App load and diagnostics callbacks to satisfy React hook dependency checks.",
+        "Use an item ref for append merges so reload callbacks avoid stale item closures.",
+        "Keep shadcn UI primitive exports compatible with local usage by scoping fast-refresh export warnings to app code."
+      ],
+      "outOfScope": ["Feishu connector", "X connector", "Toolbar-bubble automation", "Pixel-perfect baseline image diffing"],
+      "dependencies": ["lint-format-quality-gate"],
+      "definitionOfDone": [
+        "`pnpm lint` passes with zero warnings.",
+        "`pnpm check` passes after callback refactoring.",
+        "`pnpm format:check` passes after formatting.",
+        "`pnpm verify` passes with the stricter lint gate included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm lint",
+          "proves": "The project has no ESLint warnings under the enforced zero-warning budget."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "App callback refactoring remains type-safe."
+        },
+        {
+          "command": "pnpm format:check",
+          "proves": "Formatting is reproducible after the refactor."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The zero-warning lint gate remains compatible with all deterministic, browser, extension, visual, smoke, and build checks."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm lint", "pnpm check", "pnpm format:check", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["src/App.tsx", "eslint.config.js", "package.json", "feature-list.json"],
+          "mockBoundary": "The stricter lint gate proves local static quality only; it does not implement missing connectors, toolbar-bubble automation, or pixel baseline diffing.",
+          "notes": "The App data loaders are memoized and the append merge path reads from a ref to avoid stale closures. ESLint now fails on any warning. The shadcn primitive export pattern is allowed only inside `src/components/ui/`, while app code still keeps fast-refresh export checks."
+        }
+      ],
+      "next": "Use the stricter quality gate for the next connector, toolbar automation, or visual baseline slice."
     }
   ]
 }

@@ -11,7 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "node dist-server/index.js",
     "check": "tsc --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "harness:init": "tsx scripts/harness-init.ts",

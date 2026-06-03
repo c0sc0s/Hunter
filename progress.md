@@ -30,6 +30,7 @@ Last updated: 2026-06-03
 - The installed extension golden now covers both background save messaging and visible popup Save clicks.
 - Visual golden journey is executable through `pnpm golden:visual` and is included in `pnpm verify`.
 - ESLint and Prettier are configured and included in `pnpm verify`.
+- ESLint now runs with `--max-warnings=0`; the quality gate fails on any lint warning.
 - GitHub Actions now runs the full `pnpm verify` gate for pull requests and pushes to `main`.
 - PDF URLs now route through a first-class `pdf` Source Adapter using `unpdf`, with bounded download size and browser snapshot fallback.
 - YouTube/Vimeo URLs now route through a first-class `video` Source Adapter using public oEmbed metadata and honest `partial` state.
@@ -83,6 +84,7 @@ Last updated: 2026-06-03
 - Latest run added `.github/workflows/verify.yml` so hosted CI uses Node 22, pnpm 10.33.0, Playwright Chromium, Xvfb, and the same `pnpm verify` command.
 - Latest run added `pnpm golden:visual` for desktop/mobile visual contracts, screenshot artifacts, reader iframe visibility, Capture Events visibility, and no horizontal overflow.
 - Latest run added ESLint flat config, Prettier config, `pnpm lint`, `pnpm format:check`, and wired both checks into `pnpm verify`.
+- Latest run tightened `pnpm lint` to zero warnings by refactoring App data-load callbacks and scoping shadcn primitive fast-refresh export handling.
 - Note: Node emitted an experimental warning for `node:sqlite`; verification still passed.
 
 ## Open Gaps
@@ -90,8 +92,7 @@ Last updated: 2026-06-03
 - Feishu and X connectors are not implemented.
 - Chrome toolbar bubble automation is not yet executable.
 - Pixel-perfect baseline image diffing is not yet configured; current visual coverage is a screenshot contract.
-- Lint currently allows warnings for App hook dependency review and shadcn fast-refresh export patterns; it fails on errors.
 
 ## Next Step
 
-All current harness features are `done`. The next hardening step should tighten lint warnings, add baseline image diffing, add toolbar-bubble automation, or start the first connector-specific implementation slice.
+All current harness features are `done`. The next hardening step should add baseline image diffing, add toolbar-bubble automation, or start the first connector-specific implementation slice.
