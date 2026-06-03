@@ -105,6 +105,8 @@ Future connector behavior:
 
 - Detect doc/wiki/docx token from URL.
 - Use Feishu authorization. Done for OAuth authorization and encrypted token storage.
+- Read document raw content from official APIs. Done for direct `/docx/{document_id}` URLs.
+- Resolve wiki indirection before import.
 - Read document blocks from official APIs.
 - Convert blocks into Huntter canonical content.
 - Import images, attachments, titles, authors, and permissions where allowed.
@@ -138,10 +140,12 @@ Implemented now:
 - Durable recognition jobs for JSON and SQLite adapters.
 - Connector definitions, connector-state storage, connector-state API mutations, explicit unsupported sync responses, and connector-state UI for JSON and SQLite adapters.
 - Feishu OAuth authorization start/callback, PKCE state handling, account label lookup, and encrypted local token storage.
+- Feishu direct docx raw-content import for saved URL-only connector-needed items.
 
 Not implemented yet:
 
-- Feishu document import/sync connector.
+- Feishu wiki import.
+- Feishu token refresh.
 - Full source-specific block rendering.
 - Background sync/import for connected sources.
 - X OAuth connector.

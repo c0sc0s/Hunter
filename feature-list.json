@@ -1264,6 +1264,74 @@
         }
       ],
       "next": "Use the stored Feishu user access token to implement document-id extraction and raw-content import for saved Feishu URL-only items."
+    },
+    {
+      "id": "feishu-docx-raw-content-sync",
+      "title": "Import direct Feishu docx raw content on manual sync",
+      "status": "done",
+      "scope": [
+        "Extract direct `/docx/{document_id}` tokens from saved Feishu URLs.",
+        "Use encrypted Feishu connector credentials only on the server.",
+        "Fetch official Feishu document raw content with the user access token.",
+        "Replace URL-only `needs_connector` items with connector-provenance recognized content.",
+        "Run imported raw content through deterministic Content Signals, content hashing, recognition timing, and sanitized reader HTML.",
+        "Record connector Capture Events without storing raw content in the event stream.",
+        "Update connector `lastSyncAt` and preserve explicit error context when imports fail."
+      ],
+      "outOfScope": [
+        "Feishu wiki token resolution",
+        "Block-level rendering",
+        "Image and attachment import",
+        "Automatic token refresh",
+        "Background sync scheduling"
+      ],
+      "dependencies": ["feishu-oauth-foundation"],
+      "definitionOfDone": [
+        "`POST /api/connectors/feishu/sync` imports direct docx URL-only items when Feishu is connected and credentials exist.",
+        "Imported items use `captureMethod: connector` and `sourceAccess: requires_auth` without `requiredConnector`.",
+        "Unsupported Feishu URLs, including wiki indirection, are skipped rather than falsely imported.",
+        "Capture Events record connector import outcomes without raw content leakage.",
+        "`pnpm smoke:api` covers OAuth, saved docx URL-only capture, raw-content import, item replacement, and event privacy.",
+        "`pnpm verify` passes with the Feishu raw-content sync slice included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm smoke:api",
+          "proves": "A saved direct Feishu docx URL can move from `needs_connector` to connector-imported `ready` content through manual sync with mocked Feishu raw-content API responses."
+        },
+        {
+          "command": "pnpm test:quality",
+          "proves": "The shared content-quality gate supports connector text as a first-class content source."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Manual Feishu raw-content sync remains compatible with the full local gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm test:quality", "pnpm test:repository", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/connectorImport/feishuImport.ts",
+            "server/index.ts",
+            "server/sources/contentQuality.ts",
+            "scripts/smoke-api.ts",
+            "src/App.tsx",
+            "shared/types.ts",
+            "README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/SYSTEM_REDESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Smoke coverage mocks Feishu raw-content HTTP responses. The implementation uses the official raw-content endpoint shape for direct docx URLs but does not resolve wiki URLs, refresh expired tokens, import blocks/images/attachments, or schedule background sync.",
+          "notes": "Manual Feishu sync now scans saved Feishu connector-needed items, imports direct docx raw content through the decrypted server-side user access token, rebuilds the item with connector provenance, and records a connector Capture Event whose response omits raw document text."
+        }
+      ],
+      "next": "Add Feishu wiki token resolution and token refresh before broadening sync coverage."
     }
   ]
 }

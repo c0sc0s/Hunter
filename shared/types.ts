@@ -180,8 +180,12 @@ export type ConnectorMutationResponse = {
 
 export type ConnectorSyncResponse = {
   connector: ConnectorView;
-  error: string;
-  reason: "not_connected" | "not_available" | "not_implemented";
+  imported?: number;
+  skipped?: number;
+  failed?: number;
+  message?: string;
+  error?: string;
+  reason?: "not_connected" | "missing_credentials" | "not_available" | "not_implemented" | "sync_failed";
 };
 
 export type ConnectorOAuthStartResponse = {

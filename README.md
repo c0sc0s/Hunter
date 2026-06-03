@@ -78,6 +78,7 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 - `server/`: Express API, content recognition, content signals, JSON store adapter.
 - `server/repositories/`: Repository interface plus JSON and SQLite adapters.
 - `server/sources/`: source adapters for generic web, X, Feishu, and future connectors.
+- `server/connectorImport/`: permissioned connector import handlers.
 - `shared/`: shared TypeScript types.
 - `extension/`: Chrome Manifest V3 extension.
 - `docs/`: product and technical design.
@@ -93,7 +94,7 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Connectors
 
-`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/:provider/sync` returns an explicit unavailable/not-implemented error until source import exists. Private Feishu/X content still requires either a browser snapshot from the extension or a future connector import path.
+`GET /api/connectors` returns connector definitions and any stored connection state. `POST /api/connectors/feishu/oauth/start` starts Feishu OAuth when app credentials are configured, `PATCH /api/connectors/:provider` updates local connector state, `DELETE /api/connectors/:provider` disconnects it and removes stored credentials, and `POST /api/connectors/feishu/sync` imports saved Feishu `/docx/{document_id}` items through the official raw-content API. Wiki indirection, token refresh, and background sync are still future work. Private X content still requires browser snapshot capture or a future X connector.
 
 Feishu OAuth configuration:
 

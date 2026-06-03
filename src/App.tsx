@@ -351,11 +351,11 @@ export function App() {
       const response = await fetch(`/api/connectors/${provider}/sync`, { method: "POST" });
       const body = (await response.json()) as ConnectorSyncResponse;
       if (!response.ok) {
-        pushActivity("system", body.error);
+        pushActivity("system", body.error ?? `Could not sync ${provider}.`);
         return;
       }
 
-      pushActivity("system", `Synced ${body.connector.label}.`);
+      pushActivity("system", body.message ?? `Synced ${body.connector.label}.`);
     } catch (syncError) {
       pushActivity("system", syncError instanceof Error ? syncError.message : "Could not sync connector");
     } finally {

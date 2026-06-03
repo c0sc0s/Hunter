@@ -17,6 +17,7 @@ import { toRecognitionInput, toRefreshInput } from "./captureInput";
 import { completeFeishuOAuth, ConnectorConfigError, startFeishuOAuth } from "./connectorAuth/feishuOAuth";
 import { OAuthStateError } from "./connectorAuth/oauthState";
 import { buildConnectorRecord, buildDisconnectedConnectorRecord, getConnectorDefinition, isConnectorProvider } from "./connectors";
+import { syncFeishuConnector } from "./connectorImport/feishuImport";
 import { listSourceAdapters } from "./extract";
 import { buildItem, buildQueuedItem } from "./itemBuilder";
 import { libraryRepository } from "./repository";
@@ -216,6 +217,13 @@ app.post("/api/connectors/:provider/sync", async (request, response, next) => {
         reason: "not_available"
       };
       response.status(501).json(body);
+      return;
+    }
+
+    if (provider === "feishu") {
+      const body = await syncFeishuConnector(libraryRepository);
+      const status = body.reason === "missing_credentials" || body.reason === "not_connected" ? 409 : 200;
+      response.status(status).json(body);
       return;
     }
 

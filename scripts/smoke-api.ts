@@ -125,6 +125,93 @@ try {
   assert.equal(credential.accessTokenCiphertext.includes("u-test-access-token"), false);
   assert.equal(credential.refreshTokenCiphertext?.includes("u-test-refresh-token"), false);
 
+  const directFeishuDocUrl = "https://bytedance.larkoffice.com/docx/doxbcmEtbFrbbq10nPNu8gO1F3b";
+  const directFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
+    url: directFeishuDocUrl,
+    tags: ["connector-sync"]
+  });
+  assert.equal(directFeishu.enrichmentState, "processing");
+  const connectorNeededFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    requiredConnector?: string;
+    captureInput?: unknown;
+  }>(directFeishu.id, "needs_connector");
+  assert.equal(connectorNeededFeishu.requiredConnector, "feishu");
+  assert.equal("captureInput" in connectorNeededFeishu, false);
+
+  const importedFeishuText = Array.from(
+    { length: 8 },
+    (_, index) =>
+      `Feishu connector imported paragraph ${index + 1} proves raw content can replace URL-only connector-needed items without browser snapshots.`
+  ).join(" ");
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
+    if (requestUrl === "https://open.feishu.cn/open-apis/docx/v1/documents/doxbcmEtbFrbbq10nPNu8gO1F3b/raw_content?lang=0") {
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
+      return jsonResponse({ code: 0, data: { content: importedFeishuText } });
+    }
+
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const feishuImportSync = await postJson<{
+      connector: { provider: string; connectionState: string; lastSyncAt?: string };
+      imported: number;
+      skipped: number;
+      failed: number;
+      message?: string;
+    }>("/api/connectors/feishu/sync", undefined, 200);
+    assert.equal(feishuImportSync.connector.provider, "feishu");
+    assert.equal(feishuImportSync.connector.connectionState, "connected");
+    assert.match(feishuImportSync.connector.lastSyncAt ?? "", /^20/);
+    assert.equal(feishuImportSync.imported, 1);
+    assert.equal(feishuImportSync.skipped, 0);
+    assert.equal(feishuImportSync.failed, 0);
+    assert.match(feishuImportSync.message ?? "", /imported 1/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const importedFeishu = await waitForItem<{
+    id: string;
+    enrichmentState: string;
+    captureMethod?: string;
+    sourceAccess?: string;
+    requiredConnector?: string;
+    readableText?: string;
+    contentHtml?: string;
+    contentHash?: string;
+    captureInput?: unknown;
+  }>(directFeishu.id, "ready");
+  assert.equal(importedFeishu.captureMethod, "connector");
+  assert.equal(importedFeishu.sourceAccess, "requires_auth");
+  assert.equal(importedFeishu.requiredConnector, undefined);
+  assert.match(importedFeishu.readableText ?? "", /raw content can replace URL-only connector-needed items/);
+  assert.match(importedFeishu.contentHtml ?? "", /raw content can replace URL-only connector-needed items/);
+  assert.match(importedFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
+  assert.equal("captureInput" in importedFeishu, false);
+
+  const feishuImportEvents = await getJson<{
+    events: Array<{
+      itemId?: string;
+      captureMethod: string;
+      snapshotBytes: number;
+      resultState: string;
+    }>;
+  }>("/api/capture-events?limit=20");
+  assert.ok(
+    feishuImportEvents.events.some(
+      (event) =>
+        event.itemId === directFeishu.id &&
+        event.captureMethod === "connector" &&
+        event.snapshotBytes === 0 &&
+        event.resultState === "ready"
+    )
+  );
+  assert.equal(JSON.stringify(feishuImportEvents).includes(importedFeishuText), false);
+
   const disconnectedFeishuConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
     "/api/connectors/feishu"
   );
@@ -224,17 +311,17 @@ try {
       contentHash?: string;
     }>;
   }>("/api/items");
-  assert.equal(library.items.length, 1);
-  assert.equal(library.items[0]?.id, created.id);
-  assert.equal(library.items[0]?.enrichmentState, "needs_connector");
-  assert.equal(library.items[0]?.sourceAccess, "connector_required");
-  assert.equal(library.items[0]?.requiredConnector, "feishu");
-  assert.equal(library.items[0]?.recognitionVersion, 1);
-  assert.match(library.items[0]?.recognizedAt ?? "", /^20/);
-  assert.equal(typeof library.items[0]?.recognitionDurationMs, "number");
-  assert.equal(library.items[0]?.recognitionTiming?.totalMs, library.items[0]?.recognitionDurationMs);
-  assert.equal(typeof library.items[0]?.recognitionTiming?.sourceAdapterMs, "number");
-  assert.match(library.items[0]?.contentHash ?? "", /^[a-f0-9]{64}$/);
+  const createdLibraryItem = library.items.find((item) => item.id === created.id);
+  assert.ok(createdLibraryItem);
+  assert.equal(createdLibraryItem.enrichmentState, "needs_connector");
+  assert.equal(createdLibraryItem.sourceAccess, "connector_required");
+  assert.equal(createdLibraryItem.requiredConnector, "feishu");
+  assert.equal(createdLibraryItem.recognitionVersion, 1);
+  assert.match(createdLibraryItem.recognizedAt ?? "", /^20/);
+  assert.equal(typeof createdLibraryItem.recognitionDurationMs, "number");
+  assert.equal(createdLibraryItem.recognitionTiming?.totalMs, createdLibraryItem.recognitionDurationMs);
+  assert.equal(typeof createdLibraryItem.recognitionTiming?.sourceAdapterMs, "number");
+  assert.match(createdLibraryItem.contentHash ?? "", /^[a-f0-9]{64}$/);
 
   const feishuCaptureEvents = await getJson<{
     events: Array<{

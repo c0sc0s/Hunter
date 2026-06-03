@@ -1,7 +1,14 @@
 import type { EnrichmentState } from "../../shared/types";
 import { cleanText } from "./url";
 
-export type ContentCandidateSource = "selected_text" | "defuddle" | "readability" | "pdf_text" | "browser_snapshot" | "metadata";
+export type ContentCandidateSource =
+  | "selected_text"
+  | "defuddle"
+  | "readability"
+  | "pdf_text"
+  | "connector"
+  | "browser_snapshot"
+  | "metadata";
 
 export type ContentCandidate = {
   source: ContentCandidateSource;
@@ -23,11 +30,20 @@ const readyThresholds: Record<ContentCandidateSource, number> = {
   defuddle: 160,
   readability: 160,
   pdf_text: 160,
+  connector: 120,
   browser_snapshot: 240,
   metadata: Number.POSITIVE_INFINITY
 };
 
-const preferredOrder: ContentCandidateSource[] = ["selected_text", "defuddle", "readability", "pdf_text", "browser_snapshot", "metadata"];
+const preferredOrder: ContentCandidateSource[] = [
+  "selected_text",
+  "defuddle",
+  "readability",
+  "pdf_text",
+  "connector",
+  "browser_snapshot",
+  "metadata"
+];
 
 export function shouldRunReadabilityFallback(selectedText: string | undefined, defuddledText: string | undefined): boolean {
   if (hasReadySelectedText(selectedText)) return false;
@@ -88,6 +104,7 @@ function isReady(source: ContentCandidateSource, text: string): boolean {
 function extractorFor(source: ContentCandidateSource): string {
   if (source === "selected_text") return "browser_selection";
   if (source === "pdf_text") return "unpdf";
+  if (source === "connector") return "connector";
   if (source === "browser_snapshot") return "browser_snapshot";
   return source;
 }
@@ -99,6 +116,7 @@ function confidenceFor(source: ContentCandidateSource, text: string): number {
   if (source === "defuddle") return 0.9;
   if (source === "readability") return 0.84;
   if (source === "pdf_text") return 0.78;
+  if (source === "connector") return 0.82;
   if (source === "browser_snapshot") return 0.62;
   return 0.42;
 }
