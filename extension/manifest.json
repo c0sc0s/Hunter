@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Huntter",
+  "description": "Save articles, posts, and threads into Huntter.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Save to Huntter",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1:4317/*", "http://localhost:4317/*"]
+}

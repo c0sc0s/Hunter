@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huntter</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header>
+        <div class="mark">H</div>
+        <div>
+          <h1>Huntter</h1>
+          <p id="pageHost">Current page</p>
+        </div>
+      </header>
+
+      <section class="page-card">
+        <div id="cover" class="cover"></div>
+        <h2 id="pageTitle">Loading</h2>
+        <p id="pageUrl"></p>
+      </section>
+
+      <label>
+        <span>Tags</span>
+        <input id="tags" placeholder="ai, product" />
+      </label>
+
+      <label>
+        <span>Note</span>
+        <textarea id="note" placeholder="why this matters"></textarea>
+      </label>
+
+      <details>
+        <summary>API</summary>
+        <input id="apiBase" />
+      </details>
+
+      <button id="saveButton" type="button">Save</button>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="src/popup.js"></script>
+  </body>
+</html>

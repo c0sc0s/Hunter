@@ -1,0 +1,940 @@
+{
+  "version": 1,
+  "updatedAt": "2026-06-03",
+  "statusValues": ["ready", "in_progress", "blocked", "done"],
+  "features": [
+    {
+      "id": "harness-foundation",
+      "title": "Repository Harness v0 foundation",
+      "status": "done",
+      "scope": [
+        "Create a concise agent entry point.",
+        "Create machine-readable feature state.",
+        "Create progress and session handoff files.",
+        "Add a local harness initialization check.",
+        "Add API smoke verification."
+      ],
+      "outOfScope": [
+        "CI setup",
+        "Codex hooks",
+        "MCP server configuration",
+        "Full browser E2E automation"
+      ],
+      "dependencies": [],
+      "definitionOfDone": [
+        "`pnpm harness:init` validates harness assets.",
+        "`pnpm verify` passes locally.",
+        "Feature evidence records commands and mock boundaries."
+      ],
+      "verification": [
+        {
+          "command": "pnpm harness:init",
+          "proves": "Harness files exist and feature slices are parseable."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Type checks, fixtures, smoke test, and build all pass."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm verify"],
+          "result": "passed",
+          "artifacts": [],
+          "mockBoundary": "API smoke uses an in-memory SQLite repository and a Feishu URL-only capture path; it does not cover live browser extension capture or external connectors.",
+          "notes": "Verification covered harness asset validation, TypeScript check, recognition fixture, source contract fixture, SQLite repository fixture, API smoke, and Vite build. Node emitted an experimental warning for node:sqlite."
+        }
+      ],
+      "next": "Use this harness as the entry point for the next feature slice."
+    },
+    {
+      "id": "capture-public-url",
+      "title": "Capture public web URLs honestly",
+      "status": "done",
+      "scope": [
+        "Public article URL or snapshot routes through the generic web source adapter.",
+        "Readable content reaches `ready` when enough text is captured.",
+        "Metadata-only capture remains `partial` and does not pretend to be full content."
+      ],
+      "outOfScope": ["Full browser E2E", "Production persistence migration"],
+      "dependencies": [],
+      "definitionOfDone": [
+        "Recognition fixtures cover ready extraction.",
+        "Source contract tests cover metadata-only partial extraction."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Defuddle/Readability path extracts canonical content."
+        },
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "Source adapter states remain honest."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:recognition", "pnpm test:source-contracts", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/tests/recognition.test.ts", "server/tests/sourceContracts.test.ts"],
+          "mockBoundary": "Tests use deterministic local HTML and mocked oEmbed/PDF fetches; they do not cover live browser E2E capture.",
+          "notes": "Recognition fixtures cover ready public article extraction, selected-text Canonical Content, logged-in style snapshot text fallback, JSON-LD metadata selection, and metadata-only partial state."
+        }
+      ],
+      "next": "Add source-specific browser golden coverage for public article extraction."
+    },
+    {
+      "id": "capture-feishu-url",
+      "title": "Capture Feishu URLs without fake success",
+      "status": "done",
+      "scope": [
+        "URL-only Feishu capture returns `needs_connector`.",
+        "Browser snapshot Feishu capture returns `ready` when substantial visible text is available.",
+        "Browser snapshot Feishu capture returns `partial` when visible text is limited.",
+        "User-facing source message explains the required capture path and connector limits."
+      ],
+      "outOfScope": ["Feishu OAuth connector", "Exact block import", "Attachment sync"],
+      "dependencies": [],
+      "definitionOfDone": [
+        "Tests assert `needs_connector` for URL-only Feishu links.",
+        "Tests assert `partial` and `ready` Feishu browser snapshot states.",
+        "Tests assert sanitized Canonical Content HTML for Feishu browser snapshots."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "Feishu extraction state and access contracts are enforced."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:source-contracts", "pnpm test:html", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/feishu.ts", "server/tests/sourceContracts.test.ts", "server/tests/contentHtml.test.ts"],
+          "mockBoundary": "Tests use deterministic browser snapshots; they do not cover live Feishu OAuth, native block import, attachment sync, or browser E2E.",
+          "notes": "Feishu URL-only capture returns needs_connector. Limited visible snapshot content remains partial. Substantial visible snapshot content becomes ready with browser_snapshot provenance and sanitized Canonical Content HTML."
+        }
+      ],
+      "next": "Add Feishu OAuth only after native block import and permission-sync requirements are specified."
+    },
+    {
+      "id": "capture-x-url",
+      "title": "Capture X URLs and browser fallbacks",
+      "status": "done",
+      "scope": [
+        "Public X URLs use oEmbed when available.",
+        "Selected text fallback returns `partial` with browser snapshot provenance.",
+        "Browser snapshot X capture returns `ready` when substantial visible post text is available.",
+        "Unresolved X posts and oEmbed failures disclose connector/API limits."
+      ],
+      "outOfScope": ["X OAuth", "Bookmark sync", "Thread expansion"],
+      "dependencies": [],
+      "definitionOfDone": [
+        "Source contract test covers oEmbed success, selected-text fallback, browser snapshot fallback, and oEmbed failure without live X dependency."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "X fallback stays deterministic and honest."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:source-contracts", "pnpm test:html", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/x.ts", "server/tests/sourceContracts.test.ts", "server/sources/contentHtml.ts"],
+          "mockBoundary": "Tests mock publish.twitter.com oEmbed and deterministic browser snapshots; they do not cover live X OAuth, bookmark sync, thread expansion, or browser E2E.",
+          "notes": "Public oEmbed can produce ready tweet content. Selected text remains browser_snapshot provenance. Open-page X snapshots can produce ready Canonical Content HTML. oEmbed network failure degrades to needs_connector instead of failing the item."
+        }
+      ],
+      "next": "Add live oEmbed regression only if it can be made stable."
+    },
+    {
+      "id": "refresh-recognition",
+      "title": "Refresh recognition while preserving user workflow fields",
+      "status": "done",
+      "scope": [
+        "Refresh replaces recognition output.",
+        "Refresh preserves status, favorite, note, and user tags.",
+        "Duplicate canonical URLs merge rather than creating competing items."
+      ],
+      "outOfScope": ["Background job supervisor", "Retry queue"],
+      "dependencies": ["capture-public-url"],
+      "definitionOfDone": [
+        "Repository fixture covers duplicate merge and recognition replacement.",
+        "API smoke covers manual refresh with stored browser snapshot input.",
+        "Public item responses do not expose internal capture input."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:repository",
+          "proves": "Repository merge and refresh invariants hold."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Manual refresh reuses stored capture input through the API and strips internal capture input from public responses."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:repository", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/captureInput.ts", "server/index.ts", "server/tests/sqliteRepository.test.ts", "scripts/smoke-api.ts"],
+          "mockBoundary": "API smoke uses deterministic Feishu browser snapshots and an in-memory SQLite repository; it does not cover live browser E2E or external connectors.",
+          "notes": "Refresh uses stored captureInput so browser-snapshot captures can be recognized again without degrading to URL-only connector-required state. Repository merge preserves status, favorite, note, user tags, and the strongest available capture input. API responses strip captureInput."
+        }
+      ],
+      "next": "Promote browser E2E golden journeys when browser automation is stable."
+    },
+    {
+      "id": "browser-golden-journey",
+      "title": "Executable browser golden journey",
+      "status": "done",
+      "scope": [
+        "Start isolated API and web servers on free local ports.",
+        "Exercise UI save, manual Reload, search, favorite, status change, and manual Refresh.",
+        "Exercise extension-style browser snapshot capture through the API and confirm it appears in the web app.",
+        "Assert public item responses do not expose internal capture input."
+      ],
+      "outOfScope": ["Chrome extension installation", "Live external websites", "Visual regression screenshots", "Full connector OAuth"],
+      "dependencies": ["capture-feishu-url", "refresh-recognition"],
+      "definitionOfDone": [
+        "`pnpm golden:browser` runs a Playwright Chromium journey against isolated local servers.",
+        "`pnpm verify` includes the browser golden journey.",
+        "The journey proves manual Reload and Refresh without frontend polling."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:browser",
+          "proves": "A real browser can save, reload, search, update, and refresh recognized content through the app UI."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Browser golden journey remains compatible with type checks, fixtures, API smoke, and build."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm golden:browser"],
+          "result": "passed",
+          "artifacts": ["scripts/golden-browser.ts", "package.json", "vite.config.ts"],
+          "mockBoundary": "The journey uses deterministic local API data and an extension-style snapshot posted through the browser page; it does not install the Chrome extension or visit live external sites.",
+          "notes": "The browser journey saves a Feishu URL-only item, waits for connector-required recognition, uses manual Reload, posts a browser snapshot capture, searches it, favorites it, marks it reading, refreshes recognition, and asserts captureInput is stripped from public responses."
+        }
+      ],
+      "next": "Add extension-installed E2E and visual regression once browser automation scope expands."
+    },
+    {
+      "id": "capture-input-budget",
+      "title": "Bound stored capture input size",
+      "status": "done",
+      "scope": [
+        "Normalize stored capture input before persistence.",
+        "Cap extension snapshot payloads before posting to the local API.",
+        "Bound stored snapshot HTML, text, selected text, excerpt, favicon, and image candidates.",
+        "Use the same bounded snapshot input for queued recognition jobs.",
+        "Keep user note and tags out of stored capture input while re-injecting current user fields for refresh."
+      ],
+      "outOfScope": ["Binary attachment storage", "Full snapshot compression", "Encrypted local storage"],
+      "dependencies": ["refresh-recognition"],
+      "definitionOfDone": [
+        "`pnpm test:capture-input` covers capture input budgets and refresh input reconstruction.",
+        "`pnpm verify` passes with capture input budget tests included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:capture-input",
+          "proves": "Stored capture input is size-bounded and excludes user workflow fields."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Capture input budgeting remains compatible with repository, API, browser journey, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:capture-input", "pnpm test:repository", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["extension/src/extractor.js", "extension/tests/extractor.test.ts", "server/captureInput.ts", "server/tests/captureInput.test.ts", "package.json"],
+          "mockBoundary": "Tests use deterministic synthetic snapshots; they do not measure real-world database growth over large libraries.",
+          "notes": "The extension caps snapshot payloads before posting. Stored capture input has explicit character budgets for snapshot HTML, text, selected text, excerpt, favicon, and image candidates. Recognition jobs use the same bounded snapshot input while preserving user note/tags for merge behavior. User note/tags are excluded from storage-facing capture input and added back only when constructing refresh input."
+        }
+      ],
+      "next": "Add compression or external snapshot blob storage only if real library size metrics justify it."
+    },
+    {
+      "id": "selected-capture-fast-path",
+      "title": "Skip expensive parsers for strong selected text",
+      "status": "done",
+      "scope": [
+        "Treat substantial user-selected text as a high-intent Capture signal.",
+        "Skip generic-web Defuddle and Readability work when selected text already meets the ready threshold.",
+        "Keep selected-text Canonical Content HTML and metadata behavior intact."
+      ],
+      "outOfScope": ["Live browser performance telemetry", "Per-source parser timing dashboard"],
+      "dependencies": ["capture-public-url", "capture-input-budget"],
+      "definitionOfDone": [
+        "`pnpm test:quality` covers the selected-text readiness decision.",
+        "`pnpm test:recognition` keeps selected-text Canonical Content behavior intact.",
+        "`pnpm verify` passes with the fast path included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:quality",
+          "proves": "The quality gate exposes substantial selected text as a parser-skip signal."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Selected-text captures still produce browser_selection Canonical Content."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The fast path remains compatible with source contracts, browser journey, API smoke, and build."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:quality", "pnpm test:recognition", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/contentQuality.ts", "server/sources/genericWeb.ts", "server/tests/contentQuality.test.ts", "server/tests/recognition.test.ts"],
+          "mockBoundary": "Tests prove deterministic parser-skip decisions and selected-text output, but do not yet record wall-clock parser timing on live pages.",
+          "notes": "Generic web recognition now treats substantial browser-selected text as enough Canonical Content to avoid Defuddle and Readability work. This improves heavy-page save processing while preserving metadata extraction and selected-text reader HTML."
+        }
+      ],
+      "next": "Add timing telemetry around Source Adapter extraction before tuning thresholds further."
+    },
+    {
+      "id": "cover-image-quality",
+      "title": "Score cover images instead of first image wins",
+      "status": "done",
+      "scope": [
+        "Create a shared Cover Image module for Source Adapters and queued previews.",
+        "Reject low-quality images such as logos, favicons, sprites, placeholders, avatars, data URLs, SVG icons, and pixels.",
+        "Prefer structured-data, Open Graph, Twitter Card, oEmbed, source-specific, parser, and article images by deterministic score."
+      ],
+      "outOfScope": ["Fetching remote image dimensions", "Computer vision cover detection", "Manual user cover editing"],
+      "dependencies": ["capture-public-url", "capture-feishu-url", "capture-x-url"],
+      "definitionOfDone": [
+        "`pnpm test:cover` covers cover scoring and low-quality image rejection.",
+        "`pnpm test:recognition` and `pnpm test:source-contracts` keep source-specific cover behavior intact.",
+        "`pnpm verify` passes with the shared Cover Image module included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:cover",
+          "proves": "Cover image scoring prefers useful content images and rejects low-quality visual chrome."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Generic web structured-data covers still win in Canonical Content."
+        },
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "Feishu, X, and video covers remain source-correct."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The shared cover module remains compatible with API, browser journey, repository, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:cover", "pnpm test:recognition", "pnpm test:source-contracts", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/coverImage.ts", "server/tests/coverImage.test.ts", "server/sources/genericWeb.ts", "server/sources/feishu.ts", "server/sources/x.ts", "server/sources/video.ts", "server/itemBuilder.ts"],
+          "mockBoundary": "Tests use deterministic URL fixtures; they do not fetch remote images to inspect dimensions or visual contents.",
+          "notes": "Cover images are now scored behind a shared module. Source Adapters and queued item previews no longer blindly pick the first candidate, which reduces logo, favicon, sprite, placeholder, and avatar covers in the reading inbox."
+        }
+      ],
+      "next": "Add optional remote image dimension probing only after measuring whether URL-only scoring leaves enough bad covers in real captures."
+    },
+    {
+      "id": "bounded-html-fetch",
+      "title": "Bound public HTML fetch before parsing",
+      "status": "done",
+      "scope": [
+        "Move generic web public fetch into a dedicated HTML Fetch module.",
+        "Reject non-HTML public responses before JSDOM, Defuddle, or Readability work.",
+        "Bound HTML response bytes while streaming so oversized pages cannot bloat memory or stall background recognition."
+      ],
+      "outOfScope": ["Robots policy engine", "Remote content caching", "Per-domain fetch concurrency limits"],
+      "dependencies": ["capture-public-url", "selected-capture-fast-path"],
+      "definitionOfDone": [
+        "`pnpm test:html-fetch` covers content-type rejection and response-size limits.",
+        "`pnpm test:recognition` and `pnpm test:source-contracts` keep existing extraction behavior intact.",
+        "`pnpm verify` passes with bounded HTML fetch included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:html-fetch",
+          "proves": "Public HTML fetch rejects non-HTML content and oversized responses before parser work."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Generic web recognition remains compatible with bounded fetch changes."
+        },
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "Source Adapter routing and source-specific behavior remain intact."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The fetch boundary remains compatible with API, browser journey, repository, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:html-fetch", "pnpm test:recognition", "pnpm test:source-contracts", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/htmlFetch.ts", "server/tests/htmlFetch.test.ts", "server/sources/genericWeb.ts", "package.json"],
+          "mockBoundary": "Tests use deterministic mocked fetch responses; they do not cover live domain-specific throttling, redirects, or robots policy.",
+          "notes": "Generic web public URL capture no longer performs unbounded response.text() before parsing. HTML fetch now checks HTTP status, accepted content types, declared content length, and streamed byte count before handing data to JSDOM, Defuddle, or Readability."
+        }
+      ],
+      "next": "Add per-domain concurrency and fetch telemetry after live capture metrics exist."
+    },
+    {
+      "id": "sandboxed-reader-html",
+      "title": "Render captured content in a sandboxed reader",
+      "status": "done",
+      "scope": [
+        "Render Sanitized Content HTML in the detail view instead of showing only summary and excerpt.",
+        "Keep source HTML isolated from the React document through a sandboxed srcDoc iframe.",
+        "Verify the browser journey can see captured Canonical Content inside the reader."
+      ],
+      "outOfScope": ["Full typography theming", "Offline asset rewriting", "Inline annotation tools"],
+      "dependencies": ["capture-public-url", "browser-golden-journey"],
+      "definitionOfDone": [
+        "`pnpm golden:browser` asserts captured Canonical Content appears in the reader iframe.",
+        "`pnpm verify` passes with the sandboxed reader included.",
+        "Reader documentation records the sandbox boundary."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:browser",
+          "proves": "A real browser can open a saved item and see captured Canonical Content inside the reader iframe."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The reader remains compatible with API, source contracts, repository, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm golden:browser", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["src/App.tsx", "scripts/golden-browser.ts", "docs/TECHNICAL_DESIGN.md", "docs/CONTENT_RECOGNITION.md"],
+          "mockBoundary": "Browser golden uses deterministic local content and does not yet run visual regression across multiple article layouts.",
+          "notes": "The detail view now renders sanitized Canonical Content HTML in a sandboxed iframe. The iframe has no script, form, popup, or same-origin privileges, so captured source markup is visible without being merged into the app DOM."
+        }
+      ],
+      "next": "Add visual regression screenshots for varied article, Feishu, X, PDF, and video reader states."
+    },
+    {
+      "id": "content-signals-quality",
+      "title": "Deepen deterministic Content Signals",
+      "status": "done",
+      "scope": [
+        "Move summary, tag, and reading-time derivation into a dedicated Content Signals module.",
+        "Use Sanitized Content HTML structure when available so summaries prefer real paragraphs over page chrome.",
+        "Improve deterministic tag scoring with title, heading, paragraph, domain, source type, CJK, and low-signal filtering."
+      ],
+      "outOfScope": ["AI summarization", "User-editable suggested tag workflow", "Analytics-driven tag taxonomy"],
+      "dependencies": ["sandboxed-reader-html", "capture-public-url"],
+      "definitionOfDone": [
+        "`pnpm test:signals` covers structured summary, tag filtering, CJK text, and reading time.",
+        "`pnpm test:recognition` keeps recognition fixture behavior intact.",
+        "`pnpm verify` passes with the Content Signals module included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:signals",
+          "proves": "Content Signals derive higher-quality deterministic summary, tags, and reading time from Canonical Content."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Existing recognition output remains compatible with the new signals module."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Content Signals remain compatible with API, browser journey, source contracts, repository, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:signals", "pnpm test:recognition", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/contentSignals.ts", "server/enrich.ts", "server/tests/contentSignals.test.ts", "package.json"],
+          "mockBoundary": "Tests use deterministic local content; they do not prove a product-wide taxonomy or user acceptance of suggested tags.",
+          "notes": "Legacy enrichContent now delegates to Content Signals. Signals use Sanitized Content HTML segments when present, filter low-signal UI/domain words, support CJK phrases, and keep reading time deterministic without AI."
+        }
+      ],
+      "next": "Add user feedback controls for accepting, hiding, or editing suggested tags after real capture data exists."
+    },
+    {
+      "id": "recognition-duration-metadata",
+      "title": "Record recognition duration for parser tuning",
+      "status": "done",
+      "scope": [
+        "Add recognition duration metadata to Saved Items.",
+        "Persist recognition duration through SQLite and JSON repository paths.",
+        "Expose recognition duration in API responses and detail metadata UI."
+      ],
+      "outOfScope": ["Per-adapter phase timing", "Metrics export", "Performance dashboard"],
+      "dependencies": ["bounded-html-fetch", "content-signals-quality"],
+      "definitionOfDone": [
+        "`pnpm test:recognition` proves built items include recognition duration.",
+        "`pnpm test:repository` proves SQLite persists recognition duration.",
+        "`pnpm smoke:api` proves API responses expose recognition duration.",
+        "`pnpm verify` passes with the metadata included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Recognized items include duration metadata."
+        },
+        {
+          "command": "pnpm test:repository",
+          "proves": "SQLite stores and returns recognition duration."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "API responses include recognition duration without exposing internal capture input."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Recognition duration remains compatible with browser journey, source contracts, and build."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:recognition", "pnpm test:repository", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["shared/types.ts", "server/itemBuilder.ts", "server/repositories/sqliteRepository.ts", "scripts/smoke-api.ts", "src/App.tsx"],
+          "mockBoundary": "Duration is measured as whole-item recognition wall time; tests only assert non-negative numeric metadata, not real-world latency distributions.",
+          "notes": "Saved Items now carry recognitionDurationMs so parser changes, Source Adapter work, and future queue tuning can be compared with persisted evidence. Content hash remains independent of duration."
+        }
+      ],
+      "next": "Use phase timing to decide whether Source Adapter internals need fetch, parse, quality gate, or sanitizer sub-phase metrics."
+    },
+    {
+      "id": "source-adapter-contract-validation",
+      "title": "Validate Source Adapter output contracts",
+      "status": "done",
+      "scope": [
+        "Add shared Extracted Content contract validation at the registry seam.",
+        "Reject invalid or fake Source Adapter outputs before item building.",
+        "Cover state invariants for ready, partial, needs_connector, and failed states.",
+        "Validate confidence, URL fields, optional metadata fields, and contentHtml safety."
+      ],
+      "outOfScope": ["Full schema validation library migration", "Live adapter fuzzing", "Connector implementation"],
+      "dependencies": ["capture-public-url", "capture-feishu-url", "capture-x-url", "bounded-html-fetch"],
+      "definitionOfDone": [
+        "`pnpm test:contract` covers Extracted Content contract failures.",
+        "`pnpm test:source-contracts` proves current adapters still satisfy the contract.",
+        "`pnpm verify` passes with contract validation included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:contract",
+          "proves": "Invalid Extracted Content fields and state invariants fail loudly."
+        },
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "Current Feishu, X, PDF, video, and generic web adapters return valid contracted output."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The registry contract remains compatible with full local verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:contract", "pnpm test:source-contracts", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["server/sources/extractedContentContract.ts", "server/sources/registry.ts", "server/tests/extractedContentContract.test.ts", "package.json"],
+          "mockBoundary": "Tests use deterministic contract fixtures and existing mocked source adapter fixtures; they do not fuzz live websites or implement external connectors.",
+          "notes": "The Source Adapter Registry now validates Extracted Content before item building, preventing fake ready states, fake failed states, incomplete connector-required output, unsafe contentHtml, invalid URLs, and out-of-range confidence from entering Saved Items."
+        }
+      ],
+      "next": "Add property or fuzz tests for adapter outputs when more source adapters are introduced."
+    },
+    {
+      "id": "recognition-phase-timing",
+      "title": "Record recognition phase timing",
+      "status": "done",
+      "scope": [
+        "Add a small Recognition Timing module around the recognition pipeline.",
+        "Record total, Source Adapter, Content Signals, and item-build milliseconds for recognized and failed items.",
+        "Persist phase timing through SQLite and JSON repository paths.",
+        "Expose phase timing in API responses and the detail metadata UI."
+      ],
+      "outOfScope": ["Per-adapter internal fetch/parse timing", "Metrics export", "Performance dashboard", "Remote telemetry"],
+      "dependencies": ["recognition-duration-metadata", "content-signals-quality", "source-adapter-contract-validation"],
+      "definitionOfDone": [
+        "`pnpm test:timing` covers deterministic recognition timing math.",
+        "`pnpm test:recognition` proves built items include phase timing.",
+        "`pnpm test:repository` proves SQLite persists phase timing.",
+        "`pnpm smoke:api` proves API responses expose phase timing without exposing internal capture input.",
+        "`pnpm verify` passes with phase timing included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:timing",
+          "proves": "Recognition phase timing totals and normalization are deterministic."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Recognized Saved Items carry phase timing alongside total duration."
+        },
+        {
+          "command": "pnpm test:repository",
+          "proves": "SQLite stores and returns phase timing."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "Public API responses include phase timing while still stripping internal capture input."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Phase timing remains compatible with full local verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:timing", "pnpm test:recognition", "pnpm test:repository", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["shared/types.ts", "server/recognitionTiming.ts", "server/itemBuilder.ts", "server/repositories/sqliteRepository.ts", "server/tests/recognitionTiming.test.ts", "src/App.tsx"],
+          "mockBoundary": "Tests prove deterministic timing shape, persistence, and API exposure; they do not measure real-world latency distributions or export metrics.",
+          "notes": "Saved Items now carry recognitionTiming with total, Source Adapter, Content Signals, and item-build milliseconds. recognitionDurationMs remains the compatibility total. Content Hash remains independent from timing."
+        }
+      ],
+      "next": "Split Source Adapter internals into fetch, parse, quality gate, and sanitizer phases once aggregate Source Adapter timing identifies slow paths."
+    },
+    {
+      "id": "capture-event-audit-trail",
+      "title": "Record Capture Event audit trail",
+      "status": "done",
+      "scope": [
+        "Add Capture Event domain type and builder.",
+        "Persist queued capture, recognition outcome, manual refresh, and recognition failure events.",
+        "Store event source URL, canonical URL, source type, capture method, snapshot byte size, result state, timing, content hash, and error context.",
+        "Expose recent Capture Events through a diagnostics API without raw snapshot bodies.",
+        "Fix SQLite Saved Item updates so recognition replacement preserves Capture Event foreign keys."
+      ],
+      "outOfScope": ["Operations dashboard UI", "Remote telemetry export", "Event retention policy controls", "Connector sync events"],
+      "dependencies": ["capture-input-budget", "refresh-recognition", "recognition-phase-timing"],
+      "definitionOfDone": [
+        "`pnpm test:capture-events` covers event shape and snapshot byte accounting.",
+        "`pnpm test:repository` proves SQLite persists Capture Events and preserves event item IDs across Saved Item updates.",
+        "`pnpm smoke:api` proves capture events are emitted for queued and recognized captures without leaking raw snapshot text.",
+        "`pnpm verify` passes with Capture Events included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:capture-events",
+          "proves": "Capture Event construction is deterministic and stores only audit metadata."
+        },
+        {
+          "command": "pnpm test:repository",
+          "proves": "SQLite stores Capture Events and Saved Item updates do not sever event history."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "API capture events cover queued, connector-required, ready, and refresh outcomes without exposing raw snapshot bodies."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Capture Events remain compatible with full local verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm test:capture-events", "pnpm test:repository", "pnpm smoke:api", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["shared/types.ts", "server/captureEvents.ts", "server/index.ts", "server/recognitionJobs.ts", "server/repositories/sqliteRepository.ts", "server/tests/captureEvents.test.ts", "scripts/smoke-api.ts"],
+          "mockBoundary": "Tests and smoke use deterministic local captures and in-memory SQLite; they do not cover live browser extension installation, remote telemetry, or a production retention policy.",
+          "notes": "Capture Events now provide an audit trail for capture and recognition outcomes while storing only metadata. SQLite Saved Item writes were changed from insert-or-replace to on-conflict update so event item_id foreign keys survive recognition replacement."
+        }
+      ],
+      "next": "Add an operations view or retention policy only after real capture volume shows what diagnostics users need."
+    },
+    {
+      "id": "capture-events-ops-panel",
+      "title": "Show Capture Events in a manual operations panel",
+      "status": "done",
+      "scope": [
+        "Load recent Capture Events into the web client without polling.",
+        "Render a compact sidebar panel with result state, capture method, snapshot byte size, recognition duration, and error context.",
+        "Add a manual Capture Events reload button and `/events` command.",
+        "Extend the browser golden journey to prove the panel can be reloaded and shows extension snapshot events."
+      ],
+      "outOfScope": ["Always-on polling", "Full operations dashboard", "Event filtering and retention controls", "Remote telemetry"],
+      "dependencies": ["capture-event-audit-trail", "browser-golden-journey"],
+      "definitionOfDone": [
+        "`pnpm golden:browser` covers manual Capture Events panel reload and event visibility.",
+        "`pnpm check` proves the UI consumes shared Capture Event types safely.",
+        "`pnpm verify` passes with the operations panel included.",
+        "No frontend polling is introduced."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:browser",
+          "proves": "A real browser can manually reload Capture Events and see extension snapshot recognition events."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "Capture Event UI state and shared types compile."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The operations panel remains compatible with full local verification."
+        },
+        {
+          "command": "rg -n \"setInterval|refetchInterval|poll|Polling|refreshInterval\" -S src server extension scripts docs README.md",
+          "proves": "The UI did not reintroduce frontend polling."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-02",
+          "commands": ["pnpm golden:browser", "pnpm check", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["src/App.tsx", "scripts/golden-browser.ts", "README.md", "docs/TECHNICAL_DESIGN.md", "docs/INDEX.md"],
+          "mockBoundary": "Browser golden uses local deterministic captures and does not install the Chrome extension or exercise live external websites.",
+          "notes": "The web sidebar now exposes recent Capture Events with a manual reload button and `/events` command. This makes save and background recognition outcomes visible while preserving the no-polling product rule."
+        }
+      ],
+      "next": "Add event filtering or a fuller operations view only after real capture history shows which diagnostics are most useful."
+    },
+    {
+      "id": "installed-extension-golden",
+      "title": "Exercise installed Chrome extension capture",
+      "status": "done",
+      "scope": [
+        "Load the real Manifest V3 extension into Chromium.",
+        "Save a deterministic local article through the extension background path.",
+        "Verify API recognition reaches `ready` with browser-snapshot provenance.",
+        "Verify Web manual Reload displays the saved article and Capture Events panel.",
+        "Use a temporary patched manifest for random local test ports without broadening the production manifest."
+      ],
+      "outOfScope": ["Chrome Web Store packaging", "Live external websites", "Browser toolbar visual automation", "Connector OAuth"],
+      "dependencies": ["capture-events-ops-panel", "browser-golden-journey", "capture-input-budget"],
+      "definitionOfDone": [
+        "`pnpm golden:extension` runs against isolated local API, web, fixture, and extension contexts.",
+        "`pnpm verify` includes the installed extension golden journey.",
+        "The journey proves public item responses strip internal capture input.",
+        "The journey proves Capture Events do not leak raw snapshot text."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:extension",
+          "proves": "A real installed MV3 extension can capture the active page through its background path and save it into Huntter."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Installed extension capture remains compatible with type checks, fixtures, API smoke, browser golden, and build verification."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm golden:extension", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["extension/src/background.js", "scripts/golden-extension.ts", "package.json"],
+          "mockBoundary": "The journey installs the real local extension and uses a deterministic local article fixture; it does not automate Chrome toolbar UI, Chrome Web Store packaging, live external sites, or connector OAuth.",
+          "notes": "The installed extension golden loads Manifest V3 in Chromium, saves a focused article snapshot through the extension background message path, waits for ready recognition, asserts `captureInput` is stripped from public API responses, checks Capture Events for `extension_snapshot`, confirms raw snapshot text is absent from the event stream, and verifies the web app sees the result after manual Reload."
+        }
+      ],
+      "next": "Add visual regression only when it closes a product risk beyond the installed background capture path."
+    },
+    {
+      "id": "extension-popup-save-path",
+      "title": "Route popup Save through the extension background pipeline",
+      "status": "done",
+      "scope": [
+        "Remove duplicate popup-side snapshot extraction and POST behavior.",
+        "Keep the popup responsible for UI, tags, note, API base, and status text.",
+        "Route visible popup Save clicks through the shared background save-tab message path.",
+        "Extend the installed extension golden journey to click the popup Save button.",
+        "Verify popup-saved items preserve tags, note, browser-snapshot provenance, reader content, and public response stripping."
+      ],
+      "outOfScope": ["Chrome toolbar UI automation", "Chrome Web Store packaging", "Live external websites", "Connector OAuth", "Visual regression"],
+      "dependencies": ["installed-extension-golden"],
+      "definitionOfDone": [
+        "`pnpm golden:extension` clicks the visible popup Save button against a deterministic local article.",
+        "`pnpm check` proves popup-golden TypeScript coverage compiles.",
+        "`pnpm verify` passes with the popup path included.",
+        "The popup no longer owns a separate snapshot extraction and POST implementation."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:extension",
+          "proves": "A visible popup Save click can capture a page through the shared extension background pipeline and show the result in the web app after manual Reload."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The extended extension golden journey remains type-safe."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Popup Save remains compatible with all local verification gates."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm golden:extension", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["extension/src/popup.js", "scripts/golden-extension.ts", "feature-list.json"],
+          "mockBoundary": "The journey opens the extension popup page with a target tab id and clicks Save; it does not automate the Chrome toolbar bubble itself or visit live external websites.",
+          "notes": "Popup initialization now reads page title and URL without injecting the extractor. The Save button stores API base, sends tags and note to the background save-tab message path, and reports Saved only after the API returns a queued item. The golden verifies the visible popup click saves a second article, preserves tags and note, reaches ready recognition, renders reader content after Web manual Reload, and keeps captureInput out of public responses."
+        }
+      ],
+      "next": "Add toolbar-bubble automation only if it reveals risks not covered by the popup-page click path."
+    },
+    {
+      "id": "github-actions-verify-ci",
+      "title": "Run the full verification gate in GitHub Actions",
+      "status": "done",
+      "scope": [
+        "Pin the package manager through `packageManager`.",
+        "Add a GitHub Actions workflow for pull requests and pushes to main.",
+        "Install dependencies with the frozen pnpm lockfile.",
+        "Install Chromium dependencies for Playwright.",
+        "Run `pnpm verify` under Xvfb so the installed extension golden can launch headed Chromium."
+      ],
+      "outOfScope": ["Deployments", "Release packaging", "Lint/format setup", "Branch protection rules", "Publishing browser extension artifacts"],
+      "dependencies": ["extension-popup-save-path"],
+      "definitionOfDone": [
+        "Workflow exists at `.github/workflows/verify.yml`.",
+        "Workflow invokes the same `pnpm verify` command used locally.",
+        "Workflow uses Node 22 for the current `node:sqlite` runtime requirement.",
+        "Local `pnpm verify` passes after CI configuration changes."
+      ],
+      "verification": [
+        {
+          "command": "pnpm verify",
+          "proves": "The command executed by CI remains green locally with all browser and extension golden coverage."
+        },
+        {
+          "command": "pnpm harness:init",
+          "proves": "The CI feature slice is valid in the harness."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm verify", "pnpm harness:init"],
+          "result": "passed",
+          "artifacts": [".github/workflows/verify.yml", "package.json", "feature-list.json"],
+          "mockBoundary": "The workflow file is added and the invoked command passes locally; the GitHub-hosted runner itself has not executed inside this local workspace.",
+          "notes": "The workflow uses pnpm 10.33.0, Node 22, frozen lockfile install, Playwright Chromium installation with system dependencies, and `xvfb-run -a pnpm verify` so the headed MV3 extension golden can run in Linux CI."
+        }
+      ],
+      "next": "Add branch protection after the repository is connected to GitHub and the workflow has run on the hosted runner."
+    },
+    {
+      "id": "visual-contract-golden",
+      "title": "Verify desktop and mobile visual contracts",
+      "status": "done",
+      "scope": [
+        "Seed deterministic ready and connector-needed saved items.",
+        "Exercise desktop library, detail, reader, and Capture Events states in Playwright.",
+        "Exercise mobile library and sheet detail states in Playwright.",
+        "Assert page-level horizontal overflow is absent on desktop and mobile.",
+        "Write desktop and mobile PNG screenshots to `artifacts/visual/` for human review."
+      ],
+      "outOfScope": ["Pixel-perfect baseline diffing", "Cross-browser matrix", "Toolbar-bubble screenshots", "Design-system token audit"],
+      "dependencies": ["github-actions-verify-ci", "capture-events-ops-panel", "sandboxed-reader-html"],
+      "definitionOfDone": [
+        "`pnpm golden:visual` passes locally.",
+        "`pnpm verify` includes the visual golden journey.",
+        "Visual screenshots are generated under ignored `artifacts/visual/`.",
+        "Desktop and mobile checks assert no page-level horizontal overflow."
+      ],
+      "verification": [
+        {
+          "command": "pnpm golden:visual",
+          "proves": "A real browser can render the seeded desktop and mobile UI states without blank screenshots or horizontal page overflow."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Visual contracts remain compatible with the full local and CI verification gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm golden:visual", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["scripts/golden-visual.ts", "package.json", ".gitignore", "artifacts/visual/desktop-library.png", "artifacts/visual/mobile-library.png", "artifacts/visual/mobile-detail.png"],
+          "mockBoundary": "The script uses deterministic local API data and screenshot contract assertions; it does not perform pixel-perfect baseline comparison or a cross-browser visual matrix.",
+          "notes": "The visual golden starts isolated API and web servers, seeds a ready browser-snapshot article and connector-needed Feishu URL, checks desktop library/detail/Capture Events/reader states, checks mobile library and sheet detail states, verifies screenshot dimensions and non-trivial PNG size, and asserts no page-level horizontal overflow."
+        }
+      ],
+      "next": "Add baseline image diffing only after screenshot artifacts prove stable enough across CI runners."
+    },
+    {
+      "id": "lint-format-quality-gate",
+      "title": "Add lint and format checks to the quality gate",
+      "status": "done",
+      "scope": [
+        "Add ESLint flat config for TypeScript, React, Node scripts, and extension JavaScript.",
+        "Add Prettier config and ignore rules for generated or machine-state artifacts.",
+        "Add `lint`, `format`, and `format:check` package scripts.",
+        "Run Prettier once to normalize existing code style.",
+        "Include lint and format checks in `pnpm verify` and therefore CI."
+      ],
+      "outOfScope": ["Strict zero-warning lint policy", "Custom project-specific ESLint plugin", "Import sorting", "Pre-commit hooks"],
+      "dependencies": ["github-actions-verify-ci"],
+      "definitionOfDone": [
+        "`pnpm lint` passes without errors.",
+        "`pnpm format:check` passes.",
+        "`pnpm verify` includes lint and format checks.",
+        "ESLint and Prettier configuration files are committed as project-level tooling."
+      ],
+      "verification": [
+        {
+          "command": "pnpm lint",
+          "proves": "ESLint runs across project TypeScript and extension JavaScript without blocking errors."
+        },
+        {
+          "command": "pnpm format:check",
+          "proves": "Prettier style is reproducible after formatting."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Lint and format checks are enforced by the full local and hosted quality gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm lint", "pnpm format:check", "pnpm verify"],
+          "result": "passed",
+          "artifacts": ["eslint.config.js", ".prettierrc.json", ".prettierignore", "package.json", "pnpm-lock.yaml"],
+          "mockBoundary": "Lint currently allows warnings for React hook dependency review and shadcn fast-refresh export patterns; it fails only on errors.",
+          "notes": "The quality gate now runs ESLint and Prettier before tests and golden journeys. Prettier ignores machine/generated artifacts such as feature-list, lockfile, dist, data, and visual artifacts. ESLint covers source, server, scripts, shared types, Vite config, and extension JavaScript with browser/chrome globals."
+        }
+      ],
+      "next": "Tighten warnings to zero only after refactoring App load callbacks and deciding how to handle shadcn variant exports."
+    }
+  ]
+}

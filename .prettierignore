@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+artifacts/
+.harness-artifacts/
+playwright-report/
+test-results/
+pnpm-lock.yaml
+feature-list.json
+*.log
