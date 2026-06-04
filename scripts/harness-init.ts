@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-type FeatureStatus = "ready" | "in_progress" | "blocked" | "done";
+type FeatureStatus = "ready" | "in_progress" | "blocked" | "done" | "cancelled";
 
 type Feature = {
   id: string;
@@ -58,9 +58,10 @@ for (const feature of featureList.features) {
 const active = featureList.features.filter((feature) => feature.status === "in_progress");
 const ready = featureList.features.filter((feature) => feature.status === "ready");
 const done = featureList.features.filter((feature) => feature.status === "done");
+const cancelled = featureList.features.filter((feature) => feature.status === "cancelled");
 
 console.log(
-  `harness assets ok: ${featureList.features.length} features (${active.length} active, ${ready.length} ready, ${done.length} done)`
+  `harness assets ok: ${featureList.features.length} features (${active.length} active, ${ready.length} ready, ${done.length} done, ${cancelled.length} cancelled)`
 );
 if (active.length) {
   console.log(`active: ${active.map((feature) => feature.id).join(", ")}`);
@@ -74,7 +75,7 @@ async function assertReadable(file: string): Promise<void> {
 function assertFeature(feature: Feature): void {
   assert.ok(feature.id, "feature id is required");
   assert.ok(feature.title, `${feature.id} title is required`);
-  assert.ok(["ready", "in_progress", "blocked", "done"].includes(feature.status), `${feature.id} has invalid status`);
+  assert.ok(["ready", "in_progress", "blocked", "done", "cancelled"].includes(feature.status), `${feature.id} has invalid status`);
   assertNonEmptyArray(feature.scope, `${feature.id} scope`);
   assert.ok(Array.isArray(feature.outOfScope), `${feature.id} outOfScope must be an array`);
   assert.ok(Array.isArray(feature.dependencies), `${feature.id} dependencies must be an array`);

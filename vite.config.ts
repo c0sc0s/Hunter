@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
 export default defineConfig({
+  base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -13,7 +14,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: process.env.HUNTTER_API_PROXY_TARGET ?? "http://127.0.0.1:4317",
+        target: process.env.HUNTER_API_PROXY_TARGET ?? "http://127.0.0.1:4317",
         changeOrigin: true
       }
     }

@@ -18,24 +18,22 @@ export function toStoredCaptureInput(input: CreateItemInput): CreateItemInput {
     url: input.url,
     title: truncate(input.title, captureInputLimits.title),
     sourceType: input.sourceType,
-    snapshot: input.snapshot
-      ? {
-          title: truncate(input.snapshot.title, captureInputLimits.title),
-          url: input.snapshot.url,
-          canonicalUrl: input.snapshot.canonicalUrl,
-          html: truncate(input.snapshot.html, captureInputLimits.snapshotHtml),
-          textContent: truncate(input.snapshot.textContent, captureInputLimits.snapshotText),
-          selectedText: truncate(input.snapshot.selectedText, captureInputLimits.selectedText),
-          excerpt: truncate(input.snapshot.excerpt, captureInputLimits.excerpt),
-          siteName: truncate(input.snapshot.siteName, captureInputLimits.siteName),
-          favicon: truncate(input.snapshot.favicon, captureInputLimits.favicon),
-          imageCandidates: input.snapshot.imageCandidates
-            ?.slice(0, captureInputLimits.imageCandidates)
-            .map((candidate) => truncate(candidate, captureInputLimits.imageCandidateUrl))
-            .filter((candidate): candidate is string => Boolean(candidate)),
-          publishedAt: truncate(input.snapshot.publishedAt, captureInputLimits.publishedAt)
-        }
-      : undefined
+    snapshot: {
+      title: truncate(input.snapshot.title, captureInputLimits.title),
+      url: input.snapshot.url,
+      canonicalUrl: input.snapshot.canonicalUrl,
+      html: truncate(input.snapshot.html, captureInputLimits.snapshotHtml),
+      textContent: truncate(input.snapshot.textContent, captureInputLimits.snapshotText),
+      selectedText: truncate(input.snapshot.selectedText, captureInputLimits.selectedText),
+      excerpt: truncate(input.snapshot.excerpt, captureInputLimits.excerpt),
+      siteName: truncate(input.snapshot.siteName, captureInputLimits.siteName),
+      favicon: truncate(input.snapshot.favicon, captureInputLimits.favicon),
+      imageCandidates: input.snapshot.imageCandidates
+        ?.slice(0, captureInputLimits.imageCandidates)
+        .map((candidate) => truncate(candidate, captureInputLimits.imageCandidateUrl))
+        .filter((candidate): candidate is string => Boolean(candidate)),
+      publishedAt: truncate(input.snapshot.publishedAt, captureInputLimits.publishedAt)
+    }
   };
 }
 
@@ -48,12 +46,12 @@ export function toRecognitionInput(input: CreateItemInput): CreateItemInput {
 }
 
 export function toRefreshInput(item: LibraryItem): CreateItemInput {
+  if (!item.captureInput?.snapshot) {
+    throw new Error(`Cannot refresh item ${item.id}: original browser snapshot is missing. Re-save with the extension.`);
+  }
+
   return {
-    ...(item.captureInput ?? {
-      url: item.url,
-      title: item.title,
-      sourceType: item.sourceType
-    }),
+    ...item.captureInput,
     note: item.note,
     tags: item.tags
   };

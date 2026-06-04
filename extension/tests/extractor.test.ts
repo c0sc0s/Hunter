@@ -34,7 +34,7 @@ const dom = new JSDOM(
 
 dom.window.eval(extractorScript);
 
-const snapshot = (dom.window as unknown as { __huntterExtractPageSnapshot: () => ExtensionSnapshot }).__huntterExtractPageSnapshot();
+const snapshot = (dom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }).__hunterExtractPageSnapshot();
 
 assert.equal(snapshot.url, "https://example.com/articles/focused-capture?utm_source=noise");
 assert.equal(snapshot.title, "Noisy page");
@@ -48,6 +48,69 @@ assert.equal(
   JSON.stringify(snapshot.imageCandidates.slice(0, 2)),
   JSON.stringify(["https://example.com/og-cover.jpg", "https://example.com/article-cover.jpg"])
 );
+
+const xMediaDom = new JSDOM(
+  `<!doctype html>
+  <html>
+    <head>
+      <title>X media post</title>
+      <meta property="og:image" content="https://abs.twimg.com/rweb/ssr/default/v2/og/image.png" />
+    </head>
+    <body>
+      <main role="main">
+        <article data-testid="tweet">
+          <div data-testid="tweetText">
+            Browser snapshot capture for an opened X post should keep the attached media even when X exposes a platform default Open Graph image.
+          </div>
+          <img alt="" src="https://pbs.twimg.com/profile_images/123/avatar_x96.jpg" width="40" height="40" />
+          <img alt="👇" src="https://abs.twimg.com/emoji/v2/svg/1f447.svg" width="18" height="18" />
+          <a href="/hunter/status/3333333333/photo/1">
+            <div data-testid="tweetPhoto" style="background-image: url('https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&amp;name=medium')">
+              <img alt="Image" src="https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&amp;name=medium" width="640" height="360" />
+            </div>
+          </a>
+        </article>
+      </main>
+    </body>
+  </html>`,
+  { url: "https://x.com/idoubicc/status/2062152804014436508", runScripts: "outside-only", pretendToBeVisual: true }
+);
+
+xMediaDom.window.eval(extractorScript);
+const xMediaSnapshot = (
+  xMediaDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }
+).__hunterExtractPageSnapshot();
+
+assert.equal(xMediaSnapshot.imageCandidates[0], "https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium");
+assert.ok(xMediaSnapshot.imageCandidates.includes("https://abs.twimg.com/rweb/ssr/default/v2/og/image.png"));
+
+const responsiveImageDom = new JSDOM(
+  `<!doctype html>
+  <html>
+    <head><title>Responsive article</title></head>
+    <body>
+      <article>
+        <h1>Responsive article</h1>
+        <p>Article image capture should understand responsive and lazy-loaded image attributes used by modern article pages.</p>
+        <picture>
+          <source srcset="/hero-480.jpg 480w, /hero-1280.jpg 1280w" />
+          <img data-src="/lazy-hero.jpg" width="640" height="360" />
+        </picture>
+        <div style="background-image: url('/background-hero.webp')"></div>
+      </article>
+    </body>
+  </html>`,
+  { url: "https://example.com/responsive-article", runScripts: "outside-only", pretendToBeVisual: true }
+);
+
+responsiveImageDom.window.eval(extractorScript);
+const responsiveSnapshot = (
+  responsiveImageDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }
+).__hunterExtractPageSnapshot();
+
+assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/hero-1280.jpg"));
+assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/lazy-hero.jpg"));
+assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/background-hero.webp"));
 
 const hugeImages = Array.from({ length: 40 }, (_, index) => `<img src="/image-${index}.jpg" width="320" />`).join("");
 const hugeDom = new JSDOM(
@@ -69,14 +132,49 @@ const hugeDom = new JSDOM(
 );
 
 hugeDom.window.eval(extractorScript);
-const hugeSnapshot = (
-  hugeDom.window as unknown as { __huntterExtractPageSnapshot: () => ExtensionSnapshot }
-).__huntterExtractPageSnapshot();
+const hugeSnapshot = (hugeDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }).__hunterExtractPageSnapshot();
 
 assert.ok(hugeSnapshot.title && hugeSnapshot.title.length <= 500);
 assert.ok(hugeSnapshot.html.length <= 180000);
 assert.ok(hugeSnapshot.textContent && hugeSnapshot.textContent.length <= 120000);
 assert.equal(hugeSnapshot.imageCandidates.length, 16);
+
+// JSON-LD can legitimately live in <body> (e.g. B站 / Bilibili injects
+// VideoObject ld+json near the bottom of the body, well past the 180KB
+// snapshot cap). The extractor must lift it into the serialized <head> so the
+// recognition pipeline can read VideoObject metadata after truncation.
+const bodyJsonLdDom = new JSDOM(
+  `<!doctype html>
+  <html>
+    <head>
+      <meta property="og:type" content="video" />
+      <title>B站 style page</title>
+    </head>
+    <body>
+      <main>
+        <h1>Video page</h1>
+        <p>${"Filler body text. ".repeat(8000)}</p>
+      </main>
+      <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"VideoObject","name":"Demo","thumbnailUrl":["http://i0.hdslb.com/cover.jpg"],"uploadDate":"2026-06-03T00:00:00Z"}
+      </script>
+    </body>
+  </html>`,
+  { url: "https://www.bilibili.com/video/BV1demo/", runScripts: "outside-only", pretendToBeVisual: true }
+);
+bodyJsonLdDom.window.eval(extractorScript);
+const bodyJsonLdSnapshot = (
+  bodyJsonLdDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }
+).__hunterExtractPageSnapshot();
+
+assert.ok(bodyJsonLdSnapshot.html.length <= 180000, "snapshot cap still respected");
+assert.match(bodyJsonLdSnapshot.html, /application\/ld\+json/, "body JSON-LD must survive into the snapshot");
+assert.match(bodyJsonLdSnapshot.html, /VideoObject/, "VideoObject node must survive into the snapshot");
+assert.match(bodyJsonLdSnapshot.html, /thumbnailUrl/, "thumbnail URL must survive into the snapshot");
+// Lifted JSON-LD must end up in <head> so it is reliably positioned BEFORE the
+// large body that risks being truncated by the snapshot cap.
+const headSlice = bodyJsonLdSnapshot.html.slice(0, bodyJsonLdSnapshot.html.indexOf("</head>"));
+assert.match(headSlice, /application\/ld\+json/, "JSON-LD must be lifted into the serialized <head>");
 
 console.log("extension extractor fixtures passed");
 

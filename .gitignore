@@ -8,3 +8,8 @@ data/
 playwright-report/
 test-results/
 artifacts/
+electron/.bundle-tmp/
+electron/resources/server.cjs
+electron/resources/server.cjs.map
+electron/resources/runtime/
+release/

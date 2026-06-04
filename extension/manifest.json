@@ -1,16 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "Huntter",
-  "description": "Save articles, posts, and threads into Huntter.",
+  "name": "Hunter",
+  "description": "Save articles, posts, and threads into Hunter.",
   "version": "0.1.0",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
-    "default_title": "Save to Huntter",
-    "default_popup": "popup.html"
+    "default_title": "Save to Hunter",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
   },
-  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1:4317/*", "http://localhost:4317/*"]
+  "permissions": ["activeTab", "alarms", "contextMenus", "notifications", "scripting", "storage", "unlimitedStorage"],
+  "host_permissions": ["<all_urls>"]
 }

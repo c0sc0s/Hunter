@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { enrichContent } from "../enrich";
+import { buildContentSignals } from "../contentSignals";
 import { extractContent } from "../extract";
 import { buildItem } from "../itemBuilder";
 
@@ -23,9 +23,9 @@ const html = `<!doctype html>
             "headline": "Designing a Durable Reading Inbox",
             "description": "Structured data description for the real article.",
             "image": { "url": "/structured-cover.jpg" },
-            "author": [{ "name": "Huntter Team" }],
+            "author": [{ "name": "Hunter Team" }],
             "datePublished": "2026-06-01T00:00:00Z",
-            "publisher": { "name": "Huntter Lab" }
+            "publisher": { "name": "Hunter Lab" }
           }
         ]
       }
@@ -57,13 +57,13 @@ const extracted = await extractContent({
   }
 });
 
-const signals = await enrichContent(extracted);
+const signals = buildContentSignals(extracted);
 
 assert.equal(extracted.title, "Designing a Durable Reading Inbox");
 assert.equal(extracted.extractor, "defuddle");
 assert.equal(extracted.extractionState, "ready");
 assert.equal(extracted.coverImage, "https://example.com/structured-cover.jpg");
-assert.equal(extracted.author, "Huntter Team");
+assert.equal(extracted.author, "Hunter Team");
 assert.equal(extracted.publishedAt, "2026-06-01T00:00:00Z");
 assert.equal(extracted.readableText.includes("Pricing Login"), false);
 assert.equal(extracted.readableText.includes("Related posts"), false);
@@ -163,8 +163,105 @@ const privateSnapshot = await extractContent({
 
 assert.equal(privateSnapshot.extractor, "browser_snapshot");
 assert.equal(privateSnapshot.extractionState, "ready");
-assert.equal(privateSnapshot.sourceAccess, "browser_snapshot");
 assert.match(privateSnapshot.contentHtml ?? "", /Private workspace paragraph 1/);
 assert.doesNotMatch(privateSnapshot.contentHtml ?? "", /<script/i);
+
+const bilibiliShapedUrl = "https://www.bilibili.com/video/BV1hunter";
+const bilibiliShaped = await extractContent({
+  url: bilibiliShapedUrl,
+  snapshot: {
+    url: bilibiliShapedUrl,
+    title: "源优先的内容识别 - 哔哩哔哩",
+    siteName: "哔哩哔哩",
+    html: `<!doctype html>
+      <html lang="zh-CN">
+        <head>
+          <meta property="og:type" content="video.other" />
+          <meta property="og:title" content="源优先的内容识别" />
+          <meta property="og:image" content="https://i0.hdslb.com/bfs/archive/site-default-cover.jpg" />
+          <meta property="og:site_name" content="哔哩哔哩" />
+          <meta name="author" content="哔哩哔哩" />
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@graph": [
+                { "@type": "WebSite", "name": "Site shell", "publisher": { "name": "Bilibili Inc." } },
+                {
+                  "@type": "VideoObject",
+                  "name": "源优先的内容识别",
+                  "description": "%E6%9D%A5%E8%87%AA%20Hunter%20Lab%20%E7%9A%84%E6%BA%90%E4%BC%98%E5%85%88%E5%86%85%E5%AE%B9%E8%AF%86%E5%88%AB%E8%AE%B2%E8%A7%A3%E3%80%82",
+                  "thumbnailUrl": "https://i0.hdslb.com/bfs/archive/demo-cover.jpg",
+                  "uploadDate": "2026-06-01T00:00:00Z",
+                  "author": { "@type": "Person", "name": "Hunter Lab" }
+                }
+              ]
+            }
+          </script>
+        </head>
+        <body>
+          <main>
+            <h1>源优先的内容识别</h1>
+            <p>这页的主体是视频，正文区只有作者发布的简介。</p>
+          </main>
+        </body>
+      </html>`
+  }
+});
+
+assert.equal(bilibiliShaped.sourceType, "video");
+// VideoObject thumbnail must beat the generic og:image, because the structured node
+// declares the page's primary resource and the og image was a site-default fallback.
+assert.equal(bilibiliShaped.coverImage, "https://i0.hdslb.com/bfs/archive/demo-cover.jpg");
+// VideoObject.author and uploadDate must surface as the uploader/published date, not
+// the page-wide <meta name="author"> or any Article-shaped author/date.
+assert.equal(bilibiliShaped.author, "Hunter Lab");
+assert.equal(bilibiliShaped.publishedAt, "2026-06-01T00:00:00Z");
+// B站 ships VideoObject.description as a percent-encoded string. The pipeline
+// must decode it AND prefer it over snapshot body text in the excerpt, so the
+// item card actually shows the uploader's description rather than a slice of
+// recommendation rail HTML.
+assert.equal(bilibiliShaped.excerpt, "来自 Hunter Lab 的源优先内容识别讲解。");
+
+// Frontend wiring contract: ItemCard reads `summary` (NOT `excerpt`), so the
+// uploader's description must flow into the summary signal too — otherwise
+// buildContentSignals would distill it from the body HTML segments (page
+// recommendations, comments, sidebar), defeating the whole structured
+// extraction. This regression specifically guards the contentSignals →
+// itemBuilder.summary → ItemCard render path for video/audio sources.
+const bilibiliSignals = buildContentSignals(bilibiliShaped);
+assert.equal(
+  bilibiliSignals.summary,
+  "来自 Hunter Lab 的源优先内容识别讲解。",
+  "video summary must come from the uploader's description, not page chrome"
+);
+
+const articleWithEmbeddedVideoUrl = "https://example.com/blog/why-i-switched-cameras";
+const articleWithEmbeddedVideo = await extractContent({
+  url: articleWithEmbeddedVideoUrl,
+  snapshot: {
+    url: articleWithEmbeddedVideoUrl,
+    title: "Why I Switched Cameras",
+    siteName: "Example Blog",
+    html: `<!doctype html>
+      <html>
+        <head>
+          <meta property="og:type" content="article" />
+          <script type="application/ld+json">
+            { "@context": "https://schema.org", "@type": "BlogPosting", "headline": "Why I Switched Cameras" }
+          </script>
+        </head>
+        <body>
+          <article>
+            <h1>Why I Switched Cameras</h1>
+            <p>${"This long-form review explains the trade-offs across sensor size, lens system, and durable workflow integration. ".repeat(6)}</p>
+            <video src="hands-on.mp4"></video>
+          </article>
+        </body>
+      </html>`
+  }
+});
+
+// An article that merely embeds <video> should NOT be promoted to video.
+assert.equal(articleWithEmbeddedVideo.sourceType, "article");
 
 console.log("recognition fixtures passed");

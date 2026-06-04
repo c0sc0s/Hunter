@@ -9,7 +9,7 @@ export type ContentSignals = {
 };
 
 const readingWordsPerMinute = 220;
-const maxSummaryLength = 520;
+export const maxSummaryLength = 520;
 const maxTags = 6;
 
 const stopWords = new Set([
@@ -77,10 +77,25 @@ export function buildContentSignals(content: ExtractedContent): ContentSignals {
   const wordCount = content.wordCount ?? countSignalWords(text);
 
   return {
-    summary: buildSummary(segments, text, content.title),
+    summary: pickMediaSummary(content) ?? buildSummary(segments, text, content.title),
     tags: buildTags(content, segments, text),
     readingMinutes: Math.max(1, Math.ceil(wordCount / readingWordsPerMinute))
   };
+}
+
+// For video items the page body is wrapper chrome (recommendations,
+// comments, sidebar) — the uploader's description IS the editorial summary,
+// so it must beat anything buildSummary would distill from contentHtml.
+// The adapter already collapsed structured `VideoObject.description`,
+// og:description, twitter:description, and snapshot.excerpt down to
+// `content.excerpt`, so trusting that single field keeps this rule
+// host-agnostic and avoids duplicating fallback chains here. Audio pages
+// follow the same product rule but are still typed as "article" in
+// SourceType today; promote them here when SourceType gains "audio".
+function pickMediaSummary(content: ExtractedContent): string | undefined {
+  if (content.sourceType !== "video") return undefined;
+  const excerpt = cleanText(content.excerpt);
+  return excerpt ? excerpt.slice(0, maxSummaryLength) : undefined;
 }
 
 function extractSignalSegments(content: ExtractedContent): SignalSegment[] {

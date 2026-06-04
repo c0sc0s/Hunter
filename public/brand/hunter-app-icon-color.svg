@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Hunter">
+  <defs>
+    <linearGradient id="hunter-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="55%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#7C2D12"/>
+    </linearGradient>
+    <radialGradient id="hunter-halo" cx="30%" cy="22%" r="75%">
+      <stop offset="0%" stop-color="#FFFBEB" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#FFFBEB" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hunter-mark" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FFFBEB"/>
+      <stop offset="100%" stop-color="#FDE68A"/>
+    </linearGradient>
+    <linearGradient id="hunter-rim" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FFFBEB" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#7C2D12" stop-opacity="0.25"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#hunter-bg)"/>
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#hunter-halo)"/>
+
+  <g fill="url(#hunter-mark)">
+    <rect x="128" y="96" width="80" height="320" rx="40" ry="40"/>
+    <rect x="192" y="232" width="128" height="48"/>
+    <path d="M 304 136 A 40 40 0 0 1 344 96 A 40 40 0 0 1 384 136 L 384 416 L 344 376 L 304 416 Z"/>
+  </g>
+
+  <circle cx="256" cy="256" r="18" fill="#7C2D12"/>
+  <circle cx="256" cy="256" r="7" fill="#FBBF24"/>
+
+  <rect x="2" y="2" width="508" height="508" rx="110" ry="110" fill="none" stroke="url(#hunter-rim)" stroke-width="2"/>
+</svg>

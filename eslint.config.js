@@ -7,10 +7,20 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["node_modules/**", "dist/**", "data/**", "artifacts/**", ".harness-artifacts/**", "playwright-report/**", "test-results/**"]
+    ignores: [
+      "node_modules/**",
+      "dist/**",
+      "data/**",
+      "artifacts/**",
+      ".harness-artifacts/**",
+      "playwright-report/**",
+      "test-results/**",
+      "release/**",
+      "electron/resources/**"
+    ]
   },
   {
-    files: ["**/*.{js,ts,tsx}"],
+    files: ["**/*.{js,mjs,ts,tsx}"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module"
@@ -44,7 +54,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["server/**/*.ts", "scripts/**/*.ts", "shared/**/*.ts", "vite.config.ts"],
+    files: ["server/**/*.ts", "scripts/**/*.{ts,mjs}", "shared/**/*.ts", "vite.config.ts", "electron/**/*.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -53,9 +63,19 @@ export default tseslint.config(
     }
   },
   {
+    files: ["electron/**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: globals.node
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off"
+    }
+  },
+  {
     files: ["extension/**/*.js"],
     languageOptions: {
-      sourceType: "script",
+      sourceType: "module",
       globals: {
         ...globals.browser,
         chrome: "readonly"

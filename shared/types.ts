@@ -1,20 +1,10 @@
 export type SourceType = "article" | "post" | "tweet" | "feishu" | "video" | "pdf" | "other";
 
-export type ConnectorProvider = "feishu" | "x";
-
-export type ConnectorAvailability = "planned" | "available";
-
-export type ConnectorConnectionState = "not_connected" | "connected" | "error" | "disabled";
-
 export type ItemStatus = "unread" | "reading" | "read" | "archived";
 
 export type LibraryFilter = "all" | ItemStatus | "favorite";
 
-export type EnrichmentState = "processing" | "ready" | "partial" | "needs_connector" | "failed";
-
-export type CaptureMethod = "url_fetch" | "extension_snapshot" | "source_adapter" | "connector";
-
-export type SourceAccess = "public" | "browser_snapshot" | "requires_auth" | "connector_required";
+export type EnrichmentState = "processing" | "ready" | "partial" | "failed";
 
 export type RecognitionTiming = {
   totalMs: number;
@@ -23,7 +13,10 @@ export type RecognitionTiming = {
   itemBuildMs: number;
 };
 
-export type LibraryItem = {
+// PublicLibraryItem is what the API returns and what the web client consumes.
+// It deliberately omits storage-only fields so the HTTP boundary is enforced at
+// compile time, not just by toPublicItem() at runtime.
+export type PublicLibraryItem = {
   id: string;
   url: string;
   canonicalUrl: string;
@@ -50,16 +43,18 @@ export type LibraryItem = {
   confidence: number;
   enrichmentState: EnrichmentState;
   enrichmentError?: string;
-  captureMethod?: CaptureMethod;
   extractor?: string;
-  sourceAccess?: SourceAccess;
   sourceMessage?: string;
-  requiredConnector?: ConnectorProvider;
   recognitionVersion?: number;
   recognizedAt?: string;
   recognitionDurationMs?: number;
   recognitionTiming?: RecognitionTiming;
   contentHash?: string;
+};
+
+// LibraryItem is the storage-facing shape. It extends PublicLibraryItem with
+// the truncated captureInput blob used for refresh/reprocessing.
+export type LibraryItem = PublicLibraryItem & {
   captureInput?: CreateItemInput;
 };
 
@@ -83,7 +78,7 @@ export type CreateItemInput = {
   sourceType?: SourceType;
   note?: string;
   tags?: string[];
-  snapshot?: PageSnapshot;
+  snapshot: PageSnapshot;
 };
 
 export type UpdateItemInput = Partial<Pick<LibraryItem, "status" | "favorite" | "tags" | "note">>;
@@ -114,7 +109,7 @@ export type LibraryPage = {
 };
 
 export type LibraryResponse = {
-  items: LibraryItem[];
+  items: PublicLibraryItem[];
   stats: LibraryStats;
   page: LibraryPage;
 };
@@ -125,7 +120,6 @@ export type CaptureEvent = {
   sourceUrl: string;
   canonicalUrl?: string;
   sourceType?: SourceType;
-  captureMethod: CaptureMethod;
   snapshotBytes: number;
   resultState: EnrichmentState;
   recognitionVersion?: number;
@@ -137,62 +131,4 @@ export type CaptureEvent = {
 
 export type CaptureEventsResponse = {
   events: CaptureEvent[];
-};
-
-export type ConnectorDefinition = {
-  provider: ConnectorProvider;
-  label: string;
-  sourceTypes: SourceType[];
-  authMode: "oauth";
-  availability: ConnectorAvailability;
-  capabilities: string[];
-  setupMessage: string;
-};
-
-export type ConnectorRecord = {
-  provider: ConnectorProvider;
-  connectionState: ConnectorConnectionState;
-  accountLabel?: string;
-  connectedAt?: string;
-  lastSyncAt?: string;
-  lastError?: string;
-  updatedAt: string;
-};
-
-export type ConnectorView = ConnectorDefinition & {
-  connectionState: ConnectorConnectionState;
-  accountLabel?: string;
-  connectedAt?: string;
-  lastSyncAt?: string;
-  lastError?: string;
-  updatedAt?: string;
-};
-
-export type ConnectorsResponse = {
-  connectors: ConnectorView[];
-};
-
-export type ConnectorUpdateInput = Partial<Pick<ConnectorRecord, "connectionState" | "accountLabel" | "lastSyncAt" | "lastError">>;
-
-export type ConnectorMutationResponse = {
-  connector: ConnectorView;
-};
-
-export type ConnectorSyncResponse = {
-  connector: ConnectorView;
-  imported?: number;
-  skipped?: number;
-  failed?: number;
-  message?: string;
-  error?: string;
-  reason?: "not_connected" | "missing_credentials" | "not_available" | "not_implemented" | "sync_failed";
-};
-
-export type ConnectorOAuthStartResponse = {
-  provider: ConnectorProvider;
-  authorizationUrl: string;
-  redirectUri: string;
-  scopes: string[];
-  state: string;
-  expiresAt: string;
 };

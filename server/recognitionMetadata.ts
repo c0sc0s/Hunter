@@ -18,7 +18,7 @@ export type ContentHashInput = {
 
 export function buildContentHash(input: ContentHashInput): string {
   const payload = {
-    algorithmVersion: 1,
+    algorithmVersion: contentRecognitionVersion,
     canonicalUrl: input.canonicalUrl,
     title: cleanText(input.title),
     sourceType: input.sourceType,

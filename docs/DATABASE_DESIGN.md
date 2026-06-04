@@ -4,8 +4,8 @@
 
 The app now has a Repository interface with two adapters:
 
-- JSON adapter: default local development path, backed by `data/huntter-store.json`.
-- SQLite adapter: opt-in with `HUNTTER_REPOSITORY=sqlite`, backed by `node:sqlite`.
+- JSON adapter: default local development path, backed by `data/hunter-store.json`.
+- SQLite adapter: opt-in with `HUNTER_REPOSITORY=sqlite`, backed by `node:sqlite`.
 
 The product database should support:
 
@@ -48,11 +48,8 @@ create table saved_items (
   confidence real not null default 0,
   enrichment_state text not null,
   enrichment_error text,
-  capture_method text,
   extractor text,
-  source_access text,
   source_message text,
-  required_connector text,
   recognition_version integer,
   recognized_at timestamptz,
   recognition_duration_ms integer,
@@ -72,7 +69,7 @@ create index saved_items_content_hash_idx on saved_items (content_hash);
 
 The current SQLite adapter stores tags as JSON on `saved_items` and maintains an FTS table. Normalized tag tables remain the production target once server-side tag management and analytics are introduced.
 
-`capture_input_json` stores a normalized and size-bounded copy of the original URL/snapshot for refresh and future parser upgrades. Recognition job payloads use the same capture budget while preserving user note/tags for merge semantics. This is internal storage data, not part of public item responses.
+`capture_input_json` stores a normalized and size-bounded copy of the original snapshot for refresh and future parser upgrades. Recognition job payloads use the same capture budget while preserving user note/tags for merge semantics. This is internal storage data, not part of public item responses.
 
 `canonical_url` is not just the raw URL without a fragment. The recognition layer strips known tracking parameters and sorts remaining meaningful parameters before storage, so duplicate captures from campaigns merge into one Saved Item while distinct query-addressed resources remain separate.
 
@@ -97,7 +94,6 @@ create table capture_events (
   source_url text not null,
   canonical_url text,
   source_type text,
-  capture_method text not null,
   snapshot_bytes integer not null default 0,
   result_state text not null,
   recognition_version integer,
@@ -130,32 +126,7 @@ create table recognition_jobs (
 create index recognition_jobs_due_idx on recognition_jobs (status, run_after);
 ```
 
-```sql
-create table connectors (
-  provider text primary key,
-  connection_state text not null,
-  account_label text,
-  connected_at timestamptz,
-  last_sync_at timestamptz,
-  last_error text,
-  updated_at timestamptz not null
-);
-```
-
-```sql
-create table connector_credentials (
-  provider text primary key,
-  access_token_ciphertext text not null,
-  refresh_token_ciphertext text,
-  token_type text not null,
-  scope text,
-  access_token_expires_at timestamptz,
-  refresh_token_expires_at timestamptz,
-  updated_at timestamptz not null
-);
-```
-
-Connector definitions live in application code so planned providers can appear in the UI before OAuth is implemented. The `connectors` table stores only mutable public connection state. The `connector_credentials` table stores encrypted token material and is never returned by public API responses. API mutations update or clear local connector state; disconnect also deletes stored credentials. Connector sync requests remain explicit `409` or `501` failures until provider-specific import handlers exist.
+Earlier prototypes maintained `connectors` and `connector_credentials` tables for OAuth-based imports. Hunter now captures every Saved Item through the browser extension snapshot, so those tables are dropped on schema migration along with the `required_connector`, `capture_method`, and `source_access` columns on `saved_items` and `capture_events`. Existing rows with `enrichment_state='needs_connector'` are remapped to `failed` during the same migration.
 
 ## Search
 
@@ -198,8 +169,6 @@ The API should not depend on JSON file layout. The Repository interface should o
 - Upserting queued items.
 - Replacing recognition output while preserving user workflow state.
 - Storing original capture input for deterministic refresh without returning large snapshots from public API responses.
-- Listing and updating connector connection state.
-- Storing, reading, and deleting encrypted connector credentials behind server-only methods.
 - Tracking recognition version, recognized timestamp, and content hash.
 - Recording and listing Capture Events for capture and recognition diagnostics without storing raw snapshot bodies in the event stream.
 - Patching status, favorite, tags, and note.
@@ -215,10 +184,8 @@ The current JSON implementation can remain as one Adapter. SQLite/Postgres becom
 4. Add FTS search table. Done for SQLite maintenance.
 5. Add server-side search and pagination. Done through `GET /api/items`.
 6. Move background recognition into a durable job table. Done for JSON and SQLite adapters.
-7. Add connector state storage and API definitions. Done for JSON and SQLite adapters.
-8. Add recognition metadata columns, recognition duration, phase timing JSON, and content hash index. Done for SQLite adapter.
-9. Add encrypted connector credential storage. Done for JSON and SQLite adapters.
-10. Normalize canonical URLs by stripping tracking parameters before dedupe. Done for JSON and SQLite adapters through shared recognition code.
-11. Store original capture input for refresh/reprocessing while stripping it from public API responses. Done for JSON and SQLite adapters.
-12. Add Capture Events for queued captures, recognition completion, manual refresh, and recognition failure. Done for JSON and SQLite adapters.
-13. Implement Feishu OAuth authorization against connector credentials. Done for authorization, token storage, sync-time token refresh, direct docx import, legacy doc import, and wiki-node-to-docx/doc import; block-level fidelity and permission refresh remain next.
+7. Add recognition metadata columns, recognition duration, phase timing JSON, and content hash index. Done for SQLite adapter.
+8. Normalize canonical URLs by stripping tracking parameters before dedupe. Done for JSON and SQLite adapters through shared recognition code.
+9. Store original capture input for refresh/reprocessing while stripping it from public API responses. Done for JSON and SQLite adapters.
+10. Add Capture Events for queued captures, recognition completion, manual refresh, and recognition failure. Done for JSON and SQLite adapters.
+11. Drop `connectors`, `connector_credentials`, `required_connector`, `capture_method`, and `source_access`, and remap legacy `needs_connector` enum values to `failed`. Done for JSON and SQLite adapters.

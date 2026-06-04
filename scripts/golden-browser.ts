@@ -9,11 +9,11 @@ const webPort = await getFreePort();
 const apiBase = `http://127.0.0.1:${apiPort}`;
 const webBase = `http://127.0.0.1:${webPort}`;
 
-process.env.HUNTTER_DISABLE_LISTEN = "true";
-process.env.HUNTTER_REPOSITORY = "sqlite";
-process.env.HUNTTER_SQLITE_PATH = ":memory:";
-process.env.HUNTTER_SQLITE_IMPORT_JSON = "false";
-process.env.HUNTTER_API_PROXY_TARGET = apiBase;
+process.env.HUNTER_DISABLE_LISTEN = "true";
+process.env.HUNTER_REPOSITORY = "sqlite";
+process.env.HUNTER_SQLITE_PATH = ":memory:";
+process.env.HUNTER_SQLITE_IMPORT_JSON = "false";
+process.env.HUNTER_API_PROXY_TARGET = apiBase;
 
 let apiServer: Server | undefined;
 let viteServer: ViteDevServer | undefined;
@@ -31,29 +31,14 @@ try {
     }
   });
   await viteServer.listen();
-  await waitForText(webBase, "Huntter");
+  await waitForText(webBase, "Hunter");
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 
   try {
     await page.goto(webBase);
-    await page.getByRole("heading", { name: "Huntter" }).waitFor();
-
-    await page.evaluate(async () => {
-      await fetch("/api/items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: "https://bytedance.larkoffice.com/wiki/BrowserGoldenUrlOnly",
-          tags: ["golden", "urlonly"],
-          note: "url-only save through the API"
-        })
-      });
-    });
-    await waitForApiItem((item) => item.sourceType === "feishu" && item.enrichmentState === "needs_connector");
-    await page.getByRole("button", { name: "Reload", exact: true }).click();
-    await page.getByText("Connector needed").waitFor();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
 
     const visibleText = Array.from(
       { length: 8 },
@@ -88,18 +73,23 @@ try {
     await waitForApiItem((item) => item.id === createdSnapshot.id && item.enrichmentState === "ready");
 
     await page.getByRole("button", { name: "Reload", exact: true }).click();
-    await page.getByText("Browser Golden Snapshot").waitFor();
+    await page.getByText("Browser Golden Snapshot").first().waitFor();
     await page.getByText("Browser Golden Snapshot").first().click();
-    await page.getByText("extension_snapshot", { exact: true }).waitFor();
     await page.getByRole("heading", { name: "Overview" }).waitFor();
     await page.getByRole("complementary").getByText("Browser golden paragraph 1").waitFor();
     await page.getByRole("link", { name: "Open link" }).first().waitFor();
 
-    await page.getByLabel("Search").fill("Browser golden paragraph");
+    await page.getByPlaceholder("Search saved items").fill("Browser golden paragraph");
     await page.getByText("1 matched").first().waitFor();
     await page.getByRole("button", { name: "Star" }).click();
-    await page.getByRole("tab", { name: "Read", exact: true }).click();
-    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.evaluate(async (itemId) => {
+      await fetch(`/api/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "read" })
+      });
+      await fetch(`/api/items/${itemId}/enrich`, { method: "POST" });
+    }, createdSnapshot.id);
     await waitForApiItem((item) => item.id === createdSnapshot.id && item.enrichmentState === "ready");
 
     const library = (await page.evaluate(async () => {
@@ -112,7 +102,6 @@ try {
         enrichmentState: string;
         status: string;
         favorite: boolean;
-        sourceAccess?: string;
         readableText?: string;
         captureInput?: unknown;
       }>;
@@ -123,7 +112,6 @@ try {
     assert.equal(item.enrichmentState, "ready");
     assert.equal(item.status, "read");
     assert.equal(item.favorite, true);
-    assert.equal(item.sourceAccess, "browser_snapshot");
     assert.match(item.readableText ?? "", /web app can reload extension-style captures/);
     assert.equal("captureInput" in item, false);
   } finally {

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 320" width="1180" height="320" role="img" aria-label="Hunter">
+  <defs>
+    <linearGradient id="wm-mark-fill" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@700&amp;display=swap");
+      .wm-text {
+        font-family: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-weight: 700;
+        font-size: 200px;
+        letter-spacing: -0.02em;
+        fill: #1C1917;
+      }
+    </style>
+  </defs>
+
+  <g fill="url(#wm-mark-fill)">
+    <rect x="32" y="0" width="80" height="320" rx="40" ry="40"/>
+    <rect x="96" y="136" width="128" height="48"/>
+    <path d="M 208 40 A 40 40 0 0 1 248 0 A 40 40 0 0 1 288 40 L 288 320 L 248 280 L 208 320 Z"/>
+  </g>
+
+  <circle cx="160" cy="160" r="18" fill="#7C2D12"/>
+  <circle cx="160" cy="160" r="7" fill="#FBBF24"/>
+
+  <text x="360" y="228" class="wm-text">Hunter</text>
+</svg>

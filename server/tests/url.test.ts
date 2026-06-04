@@ -17,25 +17,29 @@ assert.equal(
 
 const repo = new SqliteRepository(":memory:");
 try {
+  const firstUrl = "https://example.com/article?id=42&utm_source=twitter";
+  const secondUrl = "https://example.com/article?fbclid=share&id=42&utm_medium=social";
   const first = buildQueuedItem(
     {
-      url: "https://example.com/article?id=42&utm_source=twitter",
-      tags: ["first"]
+      url: firstUrl,
+      tags: ["first"],
+      snapshot: { url: firstUrl, textContent: "first snapshot text" }
     },
     "item-first",
     "2026-06-02T00:00:00.000Z"
   );
   const second = buildQueuedItem(
     {
-      url: "https://example.com/article?fbclid=share&id=42&utm_medium=social",
-      tags: ["second"]
+      url: secondUrl,
+      tags: ["second"],
+      snapshot: { url: secondUrl, textContent: "second snapshot text" }
     },
     "item-second",
     "2026-06-02T00:01:00.000Z"
   );
 
-  await repo.upsertQueued(first, { url: first.url, tags: first.tags });
-  const merged = await repo.upsertQueued(second, { url: second.url, tags: second.tags });
+  await repo.upsertQueued(first, { url: first.url, tags: first.tags, snapshot: { url: first.url } });
+  const merged = await repo.upsertQueued(second, { url: second.url, tags: second.tags, snapshot: { url: second.url } });
   const list = await repo.list();
 
   assert.equal(first.canonicalUrl, "https://example.com/article?id=42");

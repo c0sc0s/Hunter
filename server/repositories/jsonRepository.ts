@@ -1,17 +1,10 @@
 import type { CreateItemInput, LibraryItem, UpdateItemInput } from "../../shared/types";
-import { listConnectorViews } from "../connectors";
-import {
-  getStats,
-  readItems,
-  updateCaptureEvents,
-  updateConnectorCredentials,
-  updateConnectors,
-  updateItems,
-  updateRecognitionJobs
-} from "../store";
+import { getStats, readCaptureEvents, readItems, updateCaptureEvents, updateItems, updateRecognitionJobs } from "../store";
 import { markRecognitionFailedItem, mergeQueuedItem, mergeRecognitionResult, patchItem } from "./itemMerges";
 import { buildPage, filterItems, normalizeLibraryQuery, pageItems } from "./listQuery";
 import type { LibraryRepository } from "./types";
+
+const captureEventRetentionLimit = 1000;
 
 export function createJsonRepository(): LibraryRepository {
   return {
@@ -138,50 +131,14 @@ export function createJsonRepository(): LibraryRepository {
 
     async recordCaptureEvent(event) {
       return updateCaptureEvents((events) => {
-        const nextEvents = [event, ...events].slice(0, 1000);
+        const nextEvents = [event, ...events].slice(0, captureEventRetentionLimit);
         return { events: nextEvents, result: event };
       });
     },
 
     async listCaptureEvents(limit = 50) {
-      return updateCaptureEvents((events) => ({
-        events,
-        result: events.slice(0, Math.max(1, Math.min(200, limit)))
-      }));
-    },
-
-    async listConnectors() {
-      return updateConnectors((connectors) => ({ connectors, result: listConnectorViews(connectors) }));
-    },
-
-    async upsertConnector(record) {
-      return updateConnectors((connectors) => {
-        const nextConnectors = connectors.filter((connector) => connector.provider !== record.provider);
-        nextConnectors.push(record);
-        return { connectors: nextConnectors, result: record };
-      });
-    },
-
-    async getConnectorCredential(provider) {
-      return updateConnectorCredentials((connectorCredentials) => ({
-        connectorCredentials,
-        result: connectorCredentials.find((credential) => credential.provider === provider)
-      }));
-    },
-
-    async upsertConnectorCredential(record) {
-      return updateConnectorCredentials((connectorCredentials) => {
-        const nextCredentials = connectorCredentials.filter((credential) => credential.provider !== record.provider);
-        nextCredentials.push(record);
-        return { connectorCredentials: nextCredentials, result: record };
-      });
-    },
-
-    async deleteConnectorCredential(provider) {
-      return updateConnectorCredentials((connectorCredentials) => {
-        const nextCredentials = connectorCredentials.filter((credential) => credential.provider !== provider);
-        return { connectorCredentials: nextCredentials, result: nextCredentials.length !== connectorCredentials.length };
-      });
+      const events = await readCaptureEvents();
+      return events.slice(0, Math.max(1, Math.min(200, limit)));
     }
   };
 }

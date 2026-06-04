@@ -23,7 +23,8 @@ try {
 
   const created = await repo.upsertQueued(queued, {
     url: queued.url,
-    tags: ["capture"]
+    tags: ["capture"],
+    snapshot: { url: queued.url, textContent: "Original browser snapshot for recognition refresh." }
   });
 
   assert.equal(created.id, "item-1");
@@ -36,7 +37,6 @@ try {
     sourceUrl: created.url,
     canonicalUrl: created.canonicalUrl,
     sourceType: created.sourceType,
-    captureMethod: "extension_snapshot",
     snapshotBytes: 64,
     resultState: "processing",
     recognitionVersion: 1,
@@ -73,7 +73,8 @@ try {
   const merged = await repo.upsertQueued(duplicate, {
     url: duplicate.url,
     tags: ["new-tag"],
-    note: "preserve this note"
+    note: "preserve this note",
+    snapshot: { url: duplicate.url, textContent: "Newer duplicate browser snapshot for future recognition refresh." }
   });
 
   assert.equal(merged.id, "item-1");
@@ -84,29 +85,8 @@ try {
   assert.ok(merged.tags.includes("new-tag"));
   assert.equal(merged.captureInput?.snapshot?.textContent, "Newer duplicate browser snapshot for future recognition refresh.");
 
-  const urlOnlyDuplicate = item({
-    id: "item-2b",
-    url: "https://example.com/a",
-    canonicalUrl: "https://example.com/a",
-    title: "URL-only duplicate",
-    tags: ["url-only"],
-    enrichmentState: "processing",
-    captureInput: {
-      url: "https://example.com/a"
-    }
-  });
-
-  const mergedAfterUrlOnly = await repo.upsertQueued(urlOnlyDuplicate, {
-    url: urlOnlyDuplicate.url,
-    tags: ["url-only"]
-  });
-
-  assert.equal(mergedAfterUrlOnly.id, "item-1");
-  assert.ok(mergedAfterUrlOnly.tags.includes("url-only"));
-  assert.equal(mergedAfterUrlOnly.captureInput?.snapshot?.textContent, "Newer duplicate browser snapshot for future recognition refresh.");
-
   const enriched = item({
-    ...mergedAfterUrlOnly,
+    ...merged,
     title: "Recognized title",
     summary: "Recognized summary",
     extractor: "defuddle",
@@ -123,11 +103,12 @@ try {
     tags: ["recognized", "auto-topic"],
     contentHash: "hash-recognized",
     captureInput: {
-      url: "https://example.com/a"
+      url: "https://example.com/a",
+      snapshot: { url: "https://example.com/a", textContent: "Newer duplicate browser snapshot for future recognition refresh." }
     }
   });
 
-  const replaced = await repo.replaceRecognitionResult(mergedAfterUrlOnly.id, enriched, {
+  const replaced = await repo.replaceRecognitionResult(merged.id, enriched, {
     tags: []
   });
 
@@ -162,7 +143,11 @@ try {
     tags: ["markets"]
   });
 
-  await repo.upsertQueued(second, { url: second.url, tags: second.tags });
+  await repo.upsertQueued(second, {
+    url: second.url,
+    tags: second.tags,
+    snapshot: { url: second.url, textContent: "Archived snapshot." }
+  });
 
   const list = await repo.list();
   assert.equal(list.stats.total, 2);
@@ -185,9 +170,13 @@ try {
 
   const job = {
     id: "job-1",
-    itemId: mergedAfterUrlOnly.id,
-    input: { url: mergedAfterUrlOnly.url, tags: ["recognized"] },
-    savedAt: mergedAfterUrlOnly.savedAt,
+    itemId: merged.id,
+    input: {
+      url: merged.url,
+      tags: ["recognized"],
+      snapshot: { url: merged.url, textContent: "snapshot for job" }
+    },
+    savedAt: merged.savedAt,
     status: "queued" as const,
     attemptCount: 0,
     runAfter: now,
@@ -210,49 +199,12 @@ try {
   await repo.completeRecognitionJob("job-1");
   assert.equal((await repo.claimRecognitionJobs(10)).length, 0);
 
-  const connector = await repo.upsertConnector({
-    provider: "feishu",
-    connectionState: "error",
-    accountLabel: "Docs Bot",
-    lastError: "missing document scope",
-    updatedAt: now
-  });
-
-  assert.equal(connector.provider, "feishu");
-
-  const connectors = await repo.listConnectors();
-  const feishuConnector = connectors.find((candidate) => candidate.provider === "feishu");
-  assert.equal(feishuConnector?.label, "Feishu / Lark");
-  assert.equal(feishuConnector?.availability, "available");
-  assert.equal(feishuConnector?.connectionState, "error");
-  assert.equal(feishuConnector?.accountLabel, "Docs Bot");
-  assert.equal(feishuConnector?.lastError, "missing document scope");
-
-  await repo.upsertConnectorCredential({
-    provider: "feishu",
-    accessTokenCiphertext: "v1.access",
-    refreshTokenCiphertext: "v1.refresh",
-    tokenType: "Bearer",
-    scope: "offline_access docx:document:readonly",
-    accessTokenExpiresAt: now,
-    refreshTokenExpiresAt: now,
-    updatedAt: now
-  });
-
-  const credential = await repo.getConnectorCredential("feishu");
-  assert.equal(credential?.accessTokenCiphertext, "v1.access");
-  assert.equal(credential?.refreshTokenCiphertext, "v1.refresh");
-  assert.equal(credential?.scope, "offline_access docx:document:readonly");
-  assert.equal(await repo.deleteConnectorCredential("feishu"), true);
-  assert.equal(await repo.getConnectorCredential("feishu"), undefined);
-
   await repo.recordCaptureEvent({
     id: "capture-event-1",
     itemId: merged.id,
     sourceUrl: merged.url,
     canonicalUrl: merged.canonicalUrl,
     sourceType: merged.sourceType,
-    captureMethod: "extension_snapshot",
     snapshotBytes: 128,
     resultState: "ready",
     recognitionVersion: 1,
@@ -265,7 +217,6 @@ try {
   assert.equal(captureEvents.length, 2);
   const readyCaptureEvent = captureEvents.find((event) => event.id === "capture-event-1");
   assert.equal(readyCaptureEvent?.itemId, merged.id);
-  assert.equal(readyCaptureEvent?.captureMethod, "extension_snapshot");
   assert.equal(readyCaptureEvent?.snapshotBytes, 128);
   assert.equal(readyCaptureEvent?.resultState, "ready");
   assert.equal(readyCaptureEvent?.recognitionDurationMs, 42);

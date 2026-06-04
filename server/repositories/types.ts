@@ -1,13 +1,4 @@
-import type {
-  CaptureEvent,
-  ConnectorRecord,
-  ConnectorView,
-  CreateItemInput,
-  LibraryItem,
-  LibraryQuery,
-  LibraryResponse,
-  UpdateItemInput
-} from "../../shared/types";
+import type { CaptureEvent, CreateItemInput, LibraryItem, LibraryQuery, LibraryResponse, UpdateItemInput } from "../../shared/types";
 
 export type RecognitionJobStatus = "queued" | "running" | "failed";
 
@@ -21,17 +12,6 @@ export type RecognitionJob = {
   runAfter: string;
   lastError?: string;
   createdAt: string;
-  updatedAt: string;
-};
-
-export type ConnectorCredentialRecord = {
-  provider: ConnectorRecord["provider"];
-  accessTokenCiphertext: string;
-  refreshTokenCiphertext?: string;
-  tokenType: string;
-  scope?: string;
-  accessTokenExpiresAt?: string;
-  refreshTokenExpiresAt?: string;
   updatedAt: string;
 };
 
@@ -53,9 +33,4 @@ export type LibraryRepository = {
   failRecognitionJob(id: string, error: unknown, runAfter: string): Promise<void>;
   recordCaptureEvent(event: CaptureEvent): Promise<CaptureEvent>;
   listCaptureEvents(limit?: number): Promise<CaptureEvent[]>;
-  listConnectors(): Promise<ConnectorView[]>;
-  upsertConnector(record: ConnectorRecord): Promise<ConnectorRecord>;
-  getConnectorCredential(provider: ConnectorRecord["provider"]): Promise<ConnectorCredentialRecord | undefined>;
-  upsertConnectorCredential(record: ConnectorCredentialRecord): Promise<ConnectorCredentialRecord>;
-  deleteConnectorCredential(provider: ConnectorRecord["provider"]): Promise<boolean>;
 };

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="320" height="320" role="img" aria-label="Hunter mark">
+  <defs>
+    <linearGradient id="mark-fill" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="url(#mark-fill)">
+    <rect x="32" y="0" width="80" height="320" rx="40" ry="40"/>
+    <rect x="96" y="136" width="128" height="48"/>
+    <path d="M 208 40 A 40 40 0 0 1 248 0 A 40 40 0 0 1 288 40 L 288 320 L 248 280 L 208 320 Z"/>
+  </g>
+
+  <circle cx="160" cy="160" r="18" fill="#7C2D12"/>
+  <circle cx="160" cy="160" r="7" fill="#FBBF24"/>
+</svg>

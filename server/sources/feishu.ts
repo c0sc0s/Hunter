@@ -8,70 +8,46 @@ export const feishuAdapter: SourceAdapter = {
   id: "feishu",
   label: "Feishu",
   canHandle(url) {
-    return isFeishuHost(new URL(url).hostname.replace(/^www\./, ""));
+    const host = safeHost(url);
+    return host !== undefined && isFeishuHost(host);
   },
   async extract({ url, snapshot }) {
     const normalizedUrl = normalizeUrl(url);
-    const title = cleanText(snapshot?.title) || inferFeishuTitle(normalizedUrl);
-    const selectedText = cleanText(snapshot?.selectedText);
-    const snapshotText = cleanText(snapshot?.textContent);
+    const title = cleanText(snapshot.title) || inferFeishuTitle(normalizedUrl);
+    const selectedText = cleanText(snapshot.selectedText);
+    const snapshotText = cleanText(snapshot.textContent);
     const quality = decideContentQuality([
       { source: "selected_text", text: selectedText },
       { source: "browser_snapshot", text: snapshotText },
-      { source: "metadata", text: snapshot?.excerpt }
+      { source: "metadata", text: snapshot.excerpt }
     ]);
     const visibleText = quality.readableText;
-
-    if (visibleText.length > 40) {
-      const coverImage = await selectCoverImage({
-        url: normalizedUrl,
-        html: snapshot?.html,
-        snapshotCandidates: snapshot?.imageCandidates
-      });
-
-      return {
-        url: normalizedUrl,
-        canonicalUrl: normalizeUrl(snapshot?.canonicalUrl ?? normalizedUrl),
-        title,
-        sourceName: snapshot?.siteName || "Feishu",
-        sourceType: "feishu",
-        excerpt: visibleText.slice(0, 420),
-        readableText: visibleText,
-        contentHtml:
-          quality.extractor === "browser_selection"
-            ? contentHtmlFromText(visibleText)
-            : contentHtmlFromSnapshot(snapshot?.html, visibleText),
-        coverImage,
-        favicon: snapshot?.favicon ?? faviconFor(normalizedUrl),
-        wordCount: quality.wordCount,
-        confidence: quality.confidence,
-        extractionState: quality.extractionState,
-        captureMethod: "extension_snapshot",
-        extractor: quality.extractor,
-        sourceAccess: "browser_snapshot",
-        sourceMessage:
-          quality.extractionState === "ready"
-            ? "Captured visible Feishu content from the browser. Connect Feishu later for exact block structure, permissions, attachments, and full document sync."
-            : "Captured limited visible Feishu content from the browser. Connect Feishu later for exact block structure, permissions, attachments, and full document sync."
-      };
-    }
+    const coverImage = await selectCoverImage({
+      url: normalizedUrl,
+      html: snapshot.html,
+      snapshotCandidates: snapshot.imageCandidates
+    });
 
     return {
       url: normalizedUrl,
-      canonicalUrl: normalizedUrl,
+      canonicalUrl: normalizeUrl(snapshot.canonicalUrl ?? normalizedUrl),
       title,
-      sourceName: "Feishu",
+      sourceName: snapshot.siteName || "Feishu",
       sourceType: "feishu",
-      excerpt: "",
-      readableText: "",
-      favicon: faviconFor(normalizedUrl),
-      confidence: 0.1,
-      extractionState: "needs_connector",
-      captureMethod: snapshot ? "extension_snapshot" : "url_fetch",
-      sourceAccess: "connector_required",
-      requiredConnector: "feishu",
-      sourceMessage:
-        "Feishu pages usually require the user's login and document permissions. Open the page and save with the extension; Feishu account authorization is the next step toward native document import."
+      excerpt: visibleText.slice(0, 420),
+      readableText: visibleText,
+      contentHtml: visibleText
+        ? quality.extractor === "browser_selection"
+          ? contentHtmlFromText(visibleText)
+          : contentHtmlFromSnapshot(snapshot.html, visibleText)
+        : undefined,
+      coverImage,
+      favicon: snapshot.favicon ?? faviconFor(normalizedUrl),
+      wordCount: quality.wordCount,
+      confidence: quality.confidence,
+      extractionState: quality.extractionState,
+      extractor: quality.extractor,
+      sourceMessage: quality.sourceMessage
     };
   }
 };
@@ -82,4 +58,12 @@ function inferFeishuTitle(url: string): string {
   if (path.includes("/wiki/")) return "Feishu wiki page";
   if (path.includes("/docs/")) return "Feishu article";
   return "Feishu content";
+}
+
+function safeHost(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
 }

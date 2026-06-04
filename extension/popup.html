@@ -3,30 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Huntter</title>
+    <title>Hunter</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="popup">
       <header class="app-header">
-        <div class="mark">H_</div>
-        <div>
-          <h1>Huntter</h1>
-          <p>Save current page</p>
+        <img class="mark" src="icons/hunter-app-icon.svg" alt="" aria-hidden="true" />
+        <div class="brand-copy">
+          <h1>Hunter</h1>
+          <p>Browser capture</p>
         </div>
       </header>
 
       <section class="card page-card">
         <div id="cover" class="cover">
-          <span class="cover-mark">H</span>
+          <img class="cover-mark" src="icons/hunter-mark.svg" alt="" aria-hidden="true" />
+          <img id="coverPhoto" class="cover-photo" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" hidden />
         </div>
         <div class="page-body">
           <div class="page-meta">
             <span id="pageHost" class="source-chip">Current page</span>
+            <span class="snapshot-chip">snapshot</span>
           </div>
           <h2 id="pageTitle">Loading</h2>
           <p id="pageUrl"></p>
         </div>
+      </section>
+
+      <section id="unsupportedCard" class="card unsupported-card" hidden>
+        <h2>Unsupported resource type</h2>
+        <p>Current resource is not a supported article, video, or X post.</p>
       </section>
 
       <section class="card form-card" aria-label="Save metadata">
@@ -43,8 +50,11 @@
 
       <details class="card api-card">
         <summary>
-          <span>API endpoint</span>
-          <small>Local Huntter server</small>
+          <span class="summary-copy">
+            <span>API endpoint</span>
+            <small>Local Hunter server</small>
+          </span>
+          <span class="summary-chevron" aria-hidden="true"></span>
         </summary>
         <label class="field api-field">
           <span>Base URL</span>
@@ -53,10 +63,17 @@
       </details>
 
       <footer class="actions">
-        <button id="saveButton" type="button">Save</button>
+        <button id="saveButton" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            <path d="M12 7v6" />
+            <path d="M9 10h6" />
+          </svg>
+          <span>Save</span>
+        </button>
         <p id="status" role="status" aria-live="polite"></p>
       </footer>
     </main>
-    <script src="src/popup.js"></script>
+    <script type="module" src="src/popup.js"></script>
   </body>
 </html>

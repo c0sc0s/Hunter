@@ -1,19 +1,12 @@
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 
-process.env.HUNTTER_DISABLE_LISTEN = "true";
-process.env.HUNTTER_REPOSITORY = "sqlite";
-process.env.HUNTTER_SQLITE_PATH = ":memory:";
-process.env.HUNTTER_SQLITE_IMPORT_JSON = "false";
-process.env.HUNTTER_CONNECTOR_SECRET_KEY = "smoke-connector-secret";
-delete process.env.HUNTTER_FEISHU_CLIENT_ID;
-delete process.env.HUNTTER_FEISHU_CLIENT_SECRET;
-delete process.env.HUNTTER_FEISHU_REDIRECT_URI;
-delete process.env.HUNTTER_FEISHU_SCOPES;
+process.env.HUNTER_DISABLE_LISTEN = "true";
+process.env.HUNTER_REPOSITORY = "sqlite";
+process.env.HUNTER_SQLITE_PATH = ":memory:";
+process.env.HUNTER_SQLITE_IMPORT_JSON = "false";
 
 const { app } = await import("../server/index");
-const { libraryRepository } = await import("../server/repository");
-const { openConnectorSecret } = await import("../server/connectorSecretBox");
 
 const server = await new Promise<Server>((resolve) => {
   const listeningServer = app.listen(0, "127.0.0.1", () => resolve(listeningServer));
@@ -26,758 +19,90 @@ const baseUrl = `http://127.0.0.1:${address.port}`;
 try {
   const health = await getJson<{ ok: boolean; service: string }>("/api/health");
   assert.equal(health.ok, true);
-  assert.equal(health.service, "huntter-api");
+  assert.equal(health.service, "hunter-api");
 
   const sources = await getJson<{ sources: Array<{ id: string; label: string }> }>("/api/sources");
   assert.deepEqual(
     sources.sources.map((source) => source.id),
-    ["feishu", "x", "pdf", "video", "generic-web"]
+    ["feishu", "x", "pdf", "generic-web"]
   );
 
-  const connectors = await getJson<{ connectors: Array<{ provider: string; connectionState: string; availability: string }> }>(
-    "/api/connectors"
-  );
-  assert.deepEqual(
-    connectors.connectors.map((connector) => connector.provider),
-    ["feishu", "x"]
-  );
-  assert.equal(connectors.connectors[0]?.connectionState, "not_connected");
-  assert.equal(connectors.connectors[0]?.availability, "available");
-  assert.equal(connectors.connectors[1]?.availability, "planned");
+  const missingSnapshot = await postRaw("/api/items", { url: "https://example.com/article" });
+  assert.equal(missingSnapshot.status, 400, "POST /api/items without snapshot must return 400");
 
-  const missingFeishuOAuth = await postJson<{ error: string; missing: string[] }>("/api/connectors/feishu/oauth/start", undefined, 409);
-  assert.deepEqual(missingFeishuOAuth.missing, ["HUNTTER_FEISHU_CLIENT_ID", "HUNTTER_FEISHU_CLIENT_SECRET"]);
-
-  process.env.HUNTTER_FEISHU_CLIENT_ID = "cli_a_test";
-  process.env.HUNTTER_FEISHU_CLIENT_SECRET = "feishu-secret";
-  process.env.HUNTTER_FEISHU_REDIRECT_URI = `${baseUrl}/api/connectors/feishu/oauth/callback`;
-  process.env.HUNTTER_FEISHU_SCOPES = "offline_access docx:document:readonly wiki:wiki:readonly";
-
-  const oauthStart = await postJson<{
-    provider: string;
-    authorizationUrl: string;
-    redirectUri: string;
-    scopes: string[];
-    state: string;
-    expiresAt: string;
-  }>("/api/connectors/feishu/oauth/start", undefined, 200);
-  assert.equal(oauthStart.provider, "feishu");
-  assert.equal(oauthStart.redirectUri, `${baseUrl}/api/connectors/feishu/oauth/callback`);
-  assert.deepEqual(oauthStart.scopes, ["offline_access", "docx:document:readonly", "wiki:wiki:readonly"]);
-  assert.match(oauthStart.expiresAt, /^20/);
-
-  const authorizationUrl = new URL(oauthStart.authorizationUrl);
-  assert.equal(authorizationUrl.origin, "https://accounts.feishu.cn");
-  assert.equal(authorizationUrl.pathname, "/open-apis/authen/v1/authorize");
-  assert.equal(authorizationUrl.searchParams.get("client_id"), "cli_a_test");
-  assert.equal(authorizationUrl.searchParams.get("redirect_uri"), `${baseUrl}/api/connectors/feishu/oauth/callback`);
-  assert.equal(authorizationUrl.searchParams.get("state"), oauthStart.state);
-  assert.equal(authorizationUrl.searchParams.get("scope"), "offline_access docx:document:readonly wiki:wiki:readonly");
-  assert.equal(authorizationUrl.searchParams.get("code_challenge_method"), "S256");
-  assert.ok(authorizationUrl.searchParams.get("code_challenge"));
-
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
-      const body = JSON.parse(String(init?.body)) as Record<string, string>;
-      assert.equal(body.grant_type, "authorization_code");
-      assert.equal(body.client_id, "cli_a_test");
-      assert.equal(body.client_secret, "feishu-secret");
-      assert.equal(body.code, "oauth-code");
-      assert.equal(body.redirect_uri, `${baseUrl}/api/connectors/feishu/oauth/callback`);
-      assert.ok(body.code_verifier);
-      return jsonResponse({
-        code: 0,
-        data: {
-          access_token: "u-test-access-token",
-          refresh_token: "u-test-refresh-token",
-          token_type: "Bearer",
-          expires_in: 3600,
-          refresh_token_expires_in: 7200,
-          scope: "offline_access docx:document:readonly wiki:wiki:readonly"
-        }
-      });
-    }
-
-    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v1/user_info") {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-test-access-token");
-      return jsonResponse({ code: 0, data: { name: "Huntter Feishu User", open_id: "ou_test" } });
-    }
-
-    return originalFetch(input, init);
-  }) as typeof fetch;
-
-  try {
-    const oauthCallback = await getJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
-      `/api/connectors/feishu/oauth/callback?code=oauth-code&state=${oauthStart.state}`
-    );
-    assert.equal(oauthCallback.connector.provider, "feishu");
-    assert.equal(oauthCallback.connector.connectionState, "connected");
-    assert.equal(oauthCallback.connector.accountLabel, "Huntter Feishu User");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  const credential = await libraryRepository.getConnectorCredential("feishu");
-  assert.ok(credential);
-  assert.equal(credential.tokenType, "Bearer");
-  assert.equal(credential.scope, "offline_access docx:document:readonly wiki:wiki:readonly");
-  assert.equal(credential.accessTokenCiphertext.includes("u-test-access-token"), false);
-  assert.equal(credential.refreshTokenCiphertext?.includes("u-test-refresh-token"), false);
-  assert.ok(credential.accessTokenExpiresAt && Date.parse(credential.accessTokenExpiresAt) > Date.now());
-  assert.ok(credential.refreshTokenExpiresAt && Date.parse(credential.refreshTokenExpiresAt) > Date.now());
-
-  await libraryRepository.upsertConnectorCredential({
-    ...credential,
-    accessTokenExpiresAt: new Date(Date.now() - 1000).toISOString(),
-    refreshTokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString()
-  });
-
-  const directFeishuDocUrl = "https://bytedance.larkoffice.com/docx/doxbcmEtbFrbbq10nPNu8gO1F3b";
-  const directFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
-    url: directFeishuDocUrl,
-    tags: ["connector-sync"]
-  });
-  assert.equal(directFeishu.enrichmentState, "processing");
-  const connectorNeededFeishu = await waitForItem<{
+  const articleText =
+    "Snapshot-only capture replaces server-side fetching. " +
+    "The browser extension hands us the visible DOM, selected text, and metadata. ".repeat(20);
+  const article = await postJson<{
     id: string;
-    enrichmentState: string;
-    requiredConnector?: string;
-    captureInput?: unknown;
-  }>(directFeishu.id, "needs_connector");
-  assert.equal(connectorNeededFeishu.requiredConnector, "feishu");
-  assert.equal("captureInput" in connectorNeededFeishu, false);
-
-  const importedFeishuText = Array.from(
-    { length: 8 },
-    (_, index) =>
-      `Feishu connector imported paragraph ${index + 1} proves raw content can replace URL-only connector-needed items without browser snapshots.`
-  ).join(" ");
-  let sawFeishuTokenRefresh = false;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    if (requestUrl === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
-      sawFeishuTokenRefresh = true;
-      const body = JSON.parse(String(init?.body)) as Record<string, string>;
-      assert.equal(body.grant_type, "refresh_token");
-      assert.equal(body.client_id, "cli_a_test");
-      assert.equal(body.client_secret, "feishu-secret");
-      assert.equal(body.refresh_token, "u-test-refresh-token");
-      return jsonResponse({
-        code: 0,
-        access_token: "u-refreshed-access-token",
-        refresh_token: "u-rotated-refresh-token",
-        token_type: "Bearer",
-        expires_in: 3600,
-        refresh_token_expires_in: 7200,
-        scope: "offline_access docx:document:readonly wiki:wiki:readonly"
-      });
-    }
-
-    if (requestUrl === "https://open.feishu.cn/open-apis/docx/v1/documents/doxbcmEtbFrbbq10nPNu8gO1F3b/raw_content?lang=0") {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({ code: 0, data: { content: importedFeishuText } });
-    }
-
-    return originalFetch(input, init);
-  }) as typeof fetch;
-
-  try {
-    const feishuImportSync = await postJson<{
-      connector: { provider: string; connectionState: string; lastSyncAt?: string };
-      imported: number;
-      skipped: number;
-      failed: number;
-      message?: string;
-    }>("/api/connectors/feishu/sync", undefined, 200);
-    assert.equal(feishuImportSync.connector.provider, "feishu");
-    assert.equal(feishuImportSync.connector.connectionState, "connected");
-    assert.match(feishuImportSync.connector.lastSyncAt ?? "", /^20/);
-    assert.equal(feishuImportSync.imported, 1);
-    assert.equal(feishuImportSync.skipped, 0);
-    assert.equal(feishuImportSync.failed, 0);
-    assert.match(feishuImportSync.message ?? "", /imported 1/i);
-    assert.equal(sawFeishuTokenRefresh, true);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  const refreshedCredential = await libraryRepository.getConnectorCredential("feishu");
-  assert.ok(refreshedCredential);
-  assert.equal(openConnectorSecret(refreshedCredential.accessTokenCiphertext), "u-refreshed-access-token");
-  assert.ok(refreshedCredential.refreshTokenCiphertext);
-  assert.equal(openConnectorSecret(refreshedCredential.refreshTokenCiphertext), "u-rotated-refresh-token");
-  assert.equal(refreshedCredential.accessTokenCiphertext.includes("u-refreshed-access-token"), false);
-  assert.equal(refreshedCredential.refreshTokenCiphertext.includes("u-rotated-refresh-token"), false);
-  assert.ok(refreshedCredential.accessTokenExpiresAt && Date.parse(refreshedCredential.accessTokenExpiresAt) > Date.now());
-  assert.ok(refreshedCredential.refreshTokenExpiresAt && Date.parse(refreshedCredential.refreshTokenExpiresAt) > Date.now());
-
-  const importedFeishu = await waitForItem<{
-    id: string;
-    enrichmentState: string;
-    captureMethod?: string;
-    sourceAccess?: string;
-    requiredConnector?: string;
-    readableText?: string;
-    contentHtml?: string;
-    contentHash?: string;
-    captureInput?: unknown;
-  }>(directFeishu.id, "ready");
-  assert.equal(importedFeishu.captureMethod, "connector");
-  assert.equal(importedFeishu.sourceAccess, "requires_auth");
-  assert.equal(importedFeishu.requiredConnector, undefined);
-  assert.match(importedFeishu.readableText ?? "", /raw content can replace URL-only connector-needed items/);
-  assert.match(importedFeishu.contentHtml ?? "", /raw content can replace URL-only connector-needed items/);
-  assert.match(importedFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
-  assert.equal("captureInput" in importedFeishu, false);
-
-  const feishuImportEvents = await getJson<{
-    events: Array<{
-      itemId?: string;
-      captureMethod: string;
-      snapshotBytes: number;
-      resultState: string;
-    }>;
-  }>("/api/capture-events?limit=20");
-  assert.ok(
-    feishuImportEvents.events.some(
-      (event) =>
-        event.itemId === directFeishu.id &&
-        event.captureMethod === "connector" &&
-        event.snapshotBytes === 0 &&
-        event.resultState === "ready"
-    )
-  );
-  assert.equal(JSON.stringify(feishuImportEvents).includes(importedFeishuText), false);
-
-  const wikiFeishuDocUrl = "https://bytedance.larkoffice.com/wiki/WikiNodeTokenForDocx123";
-  const wikiFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
-    url: wikiFeishuDocUrl,
-    tags: ["connector-sync", "wiki"]
-  });
-  assert.equal(wikiFeishu.enrichmentState, "processing");
-
-  const connectorNeededWikiFeishu = await waitForItem<{
-    id: string;
-    enrichmentState: string;
-    requiredConnector?: string;
-    captureInput?: unknown;
-  }>(wikiFeishu.id, "needs_connector");
-  assert.equal(connectorNeededWikiFeishu.requiredConnector, "feishu");
-  assert.equal("captureInput" in connectorNeededWikiFeishu, false);
-
-  const resolvedWikiDocumentId = "doxbcWikiResolvedDocxToken12345";
-  const importedWikiFeishuText = Array.from(
-    { length: 8 },
-    (_, index) => `Feishu wiki connector paragraph ${index + 1} proves wiki node resolution can import the resolved docx raw content.`
-  ).join(" ");
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    const parsedUrl = new URL(requestUrl);
-
-    if (
-      parsedUrl.origin === "https://open.feishu.cn" &&
-      parsedUrl.pathname === "/open-apis/wiki/v2/spaces/get_node" &&
-      parsedUrl.searchParams.get("token") === "WikiNodeTokenForDocx123"
-    ) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({
-        code: 0,
-        data: {
-          node: {
-            obj_token: resolvedWikiDocumentId,
-            obj_type: "docx",
-            title: "Resolved Wiki Doc"
-          }
-        }
-      });
-    }
-
-    if (requestUrl === `https://open.feishu.cn/open-apis/docx/v1/documents/${resolvedWikiDocumentId}/raw_content?lang=0`) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({ code: 0, data: { content: importedWikiFeishuText } });
-    }
-
-    return originalFetch(input, init);
-  }) as typeof fetch;
-
-  try {
-    const feishuWikiImportSync = await postJson<{
-      connector: { provider: string; connectionState: string; lastSyncAt?: string };
-      imported: number;
-      skipped: number;
-      failed: number;
-      message?: string;
-    }>("/api/connectors/feishu/sync", undefined, 200);
-    assert.equal(feishuWikiImportSync.connector.provider, "feishu");
-    assert.equal(feishuWikiImportSync.connector.connectionState, "connected");
-    assert.match(feishuWikiImportSync.connector.lastSyncAt ?? "", /^20/);
-    assert.equal(feishuWikiImportSync.imported, 1);
-    assert.equal(feishuWikiImportSync.skipped, 0);
-    assert.equal(feishuWikiImportSync.failed, 0);
-    assert.match(feishuWikiImportSync.message ?? "", /imported 1/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  const importedWikiFeishu = await waitForItem<{
-    id: string;
+    canonicalUrl: string;
     title: string;
-    enrichmentState: string;
-    captureMethod?: string;
-    sourceAccess?: string;
-    sourceMessage?: string;
-    requiredConnector?: string;
-    readableText?: string;
-    contentHtml?: string;
-    contentHash?: string;
-    captureInput?: unknown;
-  }>(wikiFeishu.id, "ready");
-  assert.equal(importedWikiFeishu.title, "Resolved Wiki Doc");
-  assert.equal(importedWikiFeishu.captureMethod, "connector");
-  assert.equal(importedWikiFeishu.sourceAccess, "requires_auth");
-  assert.match(importedWikiFeishu.sourceMessage ?? "", /resolved Feishu wiki document/i);
-  assert.equal(importedWikiFeishu.requiredConnector, undefined);
-  assert.match(importedWikiFeishu.readableText ?? "", /wiki node resolution can import/);
-  assert.match(importedWikiFeishu.contentHtml ?? "", /wiki node resolution can import/);
-  assert.match(importedWikiFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
-  assert.equal("captureInput" in importedWikiFeishu, false);
-
-  const feishuWikiImportEvents = await getJson<{
-    events: Array<{
-      itemId?: string;
-      captureMethod: string;
-      snapshotBytes: number;
-      resultState: string;
-    }>;
-  }>("/api/capture-events?limit=40");
-  assert.ok(
-    feishuWikiImportEvents.events.some(
-      (event) =>
-        event.itemId === wikiFeishu.id && event.captureMethod === "connector" && event.snapshotBytes === 0 && event.resultState === "ready"
-    )
-  );
-  assert.equal(JSON.stringify(feishuWikiImportEvents).includes(importedWikiFeishuText), false);
-
-  const directLegacyFeishuDocUrl = "https://bytedance.larkoffice.com/docs/doccnLegacyDirectToken1234";
-  const directLegacyFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
-    url: directLegacyFeishuDocUrl,
-    tags: ["connector-sync", "legacy-doc"]
-  });
-  assert.equal(directLegacyFeishu.enrichmentState, "processing");
-
-  const wikiLegacyFeishuDocUrl = "https://bytedance.larkoffice.com/wiki/WikiNodeTokenForLegacyDoc123";
-  const wikiLegacyFeishu = await postJson<{ id: string; enrichmentState: string; captureInput?: unknown }>("/api/items", {
-    url: wikiLegacyFeishuDocUrl,
-    tags: ["connector-sync", "legacy-doc", "wiki"]
-  });
-  assert.equal(wikiLegacyFeishu.enrichmentState, "processing");
-
-  const connectorNeededDirectLegacyFeishu = await waitForItem<{
-    id: string;
-    enrichmentState: string;
-    requiredConnector?: string;
-    captureInput?: unknown;
-  }>(directLegacyFeishu.id, "needs_connector");
-  assert.equal(connectorNeededDirectLegacyFeishu.requiredConnector, "feishu");
-  assert.equal("captureInput" in connectorNeededDirectLegacyFeishu, false);
-
-  const connectorNeededWikiLegacyFeishu = await waitForItem<{
-    id: string;
-    enrichmentState: string;
-    requiredConnector?: string;
-    captureInput?: unknown;
-  }>(wikiLegacyFeishu.id, "needs_connector");
-  assert.equal(connectorNeededWikiLegacyFeishu.requiredConnector, "feishu");
-  assert.equal("captureInput" in connectorNeededWikiLegacyFeishu, false);
-
-  const directLegacyDocToken = "doccnLegacyDirectToken1234";
-  const resolvedWikiLegacyDocToken = "doccnWikiLegacyToken12345";
-  const importedDirectLegacyFeishuText = Array.from(
-    { length: 8 },
-    (_, index) => `Feishu legacy direct document paragraph ${index + 1} proves old docs URLs import through doc v2 raw content.`
-  ).join(" ");
-  const importedWikiLegacyFeishuText = Array.from(
-    { length: 8 },
-    (_, index) =>
-      `Feishu legacy wiki document paragraph ${index + 1} proves wiki nodes resolving to old docs import through doc v2 raw content.`
-  ).join(" ");
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const requestUrl = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    const parsedUrl = new URL(requestUrl);
-
-    if (
-      parsedUrl.origin === "https://open.feishu.cn" &&
-      parsedUrl.pathname === "/open-apis/wiki/v2/spaces/get_node" &&
-      parsedUrl.searchParams.get("token") === "WikiNodeTokenForLegacyDoc123"
-    ) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({
-        code: 0,
-        data: {
-          node: {
-            obj_token: resolvedWikiLegacyDocToken,
-            obj_type: "doc",
-            title: "Resolved Legacy Wiki Doc"
-          }
-        }
-      });
-    }
-
-    if (requestUrl === `https://open.feishu.cn/open-apis/doc/v2/${directLegacyDocToken}/raw_content`) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({ code: 0, data: { content: importedDirectLegacyFeishuText } });
-    }
-
-    if (requestUrl === `https://open.feishu.cn/open-apis/doc/v2/${resolvedWikiLegacyDocToken}/raw_content`) {
-      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer u-refreshed-access-token");
-      return jsonResponse({ code: 0, data: { content: importedWikiLegacyFeishuText } });
-    }
-
-    return originalFetch(input, init);
-  }) as typeof fetch;
-
-  try {
-    const feishuLegacyImportSync = await postJson<{
-      connector: { provider: string; connectionState: string; lastSyncAt?: string };
-      imported: number;
-      skipped: number;
-      failed: number;
-      message?: string;
-    }>("/api/connectors/feishu/sync", undefined, 200);
-    assert.equal(feishuLegacyImportSync.connector.provider, "feishu");
-    assert.equal(feishuLegacyImportSync.connector.connectionState, "connected");
-    assert.match(feishuLegacyImportSync.connector.lastSyncAt ?? "", /^20/);
-    assert.equal(feishuLegacyImportSync.imported, 2);
-    assert.equal(feishuLegacyImportSync.skipped, 0);
-    assert.equal(feishuLegacyImportSync.failed, 0);
-    assert.match(feishuLegacyImportSync.message ?? "", /imported 2/i);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  const importedDirectLegacyFeishu = await waitForItem<{
-    id: string;
-    enrichmentState: string;
-    captureMethod?: string;
-    sourceAccess?: string;
-    sourceMessage?: string;
-    requiredConnector?: string;
-    readableText?: string;
-    contentHtml?: string;
-    contentHash?: string;
-    captureInput?: unknown;
-  }>(directLegacyFeishu.id, "ready");
-  assert.equal(importedDirectLegacyFeishu.captureMethod, "connector");
-  assert.equal(importedDirectLegacyFeishu.sourceAccess, "requires_auth");
-  assert.match(importedDirectLegacyFeishu.sourceMessage ?? "", /Feishu legacy document/i);
-  assert.equal(importedDirectLegacyFeishu.requiredConnector, undefined);
-  assert.match(importedDirectLegacyFeishu.readableText ?? "", /old docs URLs import through doc v2 raw content/);
-  assert.match(importedDirectLegacyFeishu.contentHtml ?? "", /old docs URLs import through doc v2 raw content/);
-  assert.match(importedDirectLegacyFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
-  assert.equal("captureInput" in importedDirectLegacyFeishu, false);
-
-  const importedWikiLegacyFeishu = await waitForItem<{
-    id: string;
-    title: string;
-    enrichmentState: string;
-    captureMethod?: string;
-    sourceAccess?: string;
-    sourceMessage?: string;
-    requiredConnector?: string;
-    readableText?: string;
-    contentHtml?: string;
-    contentHash?: string;
-    captureInput?: unknown;
-  }>(wikiLegacyFeishu.id, "ready");
-  assert.equal(importedWikiLegacyFeishu.title, "Resolved Legacy Wiki Doc");
-  assert.equal(importedWikiLegacyFeishu.captureMethod, "connector");
-  assert.equal(importedWikiLegacyFeishu.sourceAccess, "requires_auth");
-  assert.match(importedWikiLegacyFeishu.sourceMessage ?? "", /resolved Feishu wiki legacy document/i);
-  assert.equal(importedWikiLegacyFeishu.requiredConnector, undefined);
-  assert.match(importedWikiLegacyFeishu.readableText ?? "", /wiki nodes resolving to old docs import/);
-  assert.match(importedWikiLegacyFeishu.contentHtml ?? "", /wiki nodes resolving to old docs import/);
-  assert.match(importedWikiLegacyFeishu.contentHash ?? "", /^[a-f0-9]{64}$/);
-  assert.equal("captureInput" in importedWikiLegacyFeishu, false);
-
-  const feishuLegacyImportEvents = await getJson<{
-    events: Array<{
-      itemId?: string;
-      captureMethod: string;
-      snapshotBytes: number;
-      resultState: string;
-    }>;
-  }>("/api/capture-events?limit=60");
-  for (const importedItemId of [directLegacyFeishu.id, wikiLegacyFeishu.id]) {
-    assert.ok(
-      feishuLegacyImportEvents.events.some(
-        (event) =>
-          event.itemId === importedItemId &&
-          event.captureMethod === "connector" &&
-          event.snapshotBytes === 0 &&
-          event.resultState === "ready"
-      )
-    );
-  }
-  assert.equal(JSON.stringify(feishuLegacyImportEvents).includes(importedDirectLegacyFeishuText), false);
-  assert.equal(JSON.stringify(feishuLegacyImportEvents).includes(importedWikiLegacyFeishuText), false);
-
-  const disconnectedFeishuConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
-    "/api/connectors/feishu"
-  );
-  assert.equal(disconnectedFeishuConnector.connector.provider, "feishu");
-  assert.equal(disconnectedFeishuConnector.connector.connectionState, "not_connected");
-  assert.equal(disconnectedFeishuConnector.connector.accountLabel, undefined);
-  assert.equal(await libraryRepository.getConnectorCredential("feishu"), undefined);
-
-  const patchedFeishuConnector = await patchJson<{
-    connector: { provider: string; label: string; connectionState: string; accountLabel?: string; lastError?: string };
-  }>("/api/connectors/feishu", {
-    connectionState: "error",
-    accountLabel: "Docs Bot",
-    lastError: "missing document scope"
-  });
-  assert.equal(patchedFeishuConnector.connector.provider, "feishu");
-  assert.equal(patchedFeishuConnector.connector.label, "Feishu / Lark");
-  assert.equal(patchedFeishuConnector.connector.connectionState, "error");
-  assert.equal(patchedFeishuConnector.connector.accountLabel, "Docs Bot");
-  assert.equal(patchedFeishuConnector.connector.lastError, "missing document scope");
-
-  const feishuConnector = await getJson<{ provider: string; connectionState: string; lastError?: string }>("/api/connectors/feishu");
-  assert.equal(feishuConnector.connectionState, "error");
-  assert.equal(feishuConnector.lastError, "missing document scope");
-
-  const feishuSync = await postJson<{ reason: string; error: string }>("/api/connectors/feishu/sync", undefined, 409);
-  assert.equal(feishuSync.reason, "not_connected");
-  assert.match(feishuSync.error, /not connected/i);
-
-  const patchedXConnector = await patchJson<{
-    connector: { provider: string; connectionState: string; accountLabel?: string; connectedAt?: string };
-  }>("/api/connectors/x", {
-    connectionState: "connected",
-    accountLabel: "@huntter-test"
-  });
-  assert.equal(patchedXConnector.connector.provider, "x");
-  assert.equal(patchedXConnector.connector.connectionState, "connected");
-  assert.equal(patchedXConnector.connector.accountLabel, "@huntter-test");
-  assert.match(patchedXConnector.connector.connectedAt ?? "", /^20/);
-
-  const xSync = await postJson<{ reason: string; error: string }>("/api/connectors/x/sync", undefined, 501);
-  assert.equal(xSync.reason, "not_available");
-  assert.match(xSync.error, /not available yet/i);
-
-  const disconnectedXConnector = await deleteJson<{ connector: { provider: string; connectionState: string; accountLabel?: string } }>(
-    "/api/connectors/x"
-  );
-  assert.equal(disconnectedXConnector.connector.provider, "x");
-  assert.equal(disconnectedXConnector.connector.connectionState, "not_connected");
-  assert.equal(disconnectedXConnector.connector.accountLabel, undefined);
-
-  const created = await postJson<{
-    id: string;
     sourceType: string;
     enrichmentState: string;
-    sourceMessage?: string;
-    requiredConnector?: string;
-    recognitionVersion?: number;
-    recognitionDurationMs?: number;
-    recognitionTiming?: {
-      totalMs: number;
-      sourceAdapterMs: number;
-      contentSignalsMs: number;
-      itemBuildMs: number;
-    };
-    contentHash?: string;
-    captureInput?: unknown;
   }>("/api/items", {
-    url: "https://bytedance.larkoffice.com/wiki/SjaPwstMjiA2f4khXz1cX6vFnLg",
-    tags: ["smoke"]
-  });
-
-  assert.equal(created.sourceType, "feishu");
-  assert.equal(created.enrichmentState, "processing");
-  assert.equal(created.recognitionVersion, 1);
-  assert.match(created.contentHash ?? "", /^[a-f0-9]{64}$/);
-  assert.match(created.sourceMessage ?? "", /extracting content/i);
-  assert.equal("captureInput" in created, false);
-
-  await wait(50);
-
-  const library = await getJson<{
-    items: Array<{
-      id: string;
-      enrichmentState: string;
-      sourceAccess?: string;
-      requiredConnector?: string;
-      recognitionVersion?: number;
-      recognizedAt?: string;
-      recognitionDurationMs?: number;
-      recognitionTiming?: {
-        totalMs: number;
-        sourceAdapterMs: number;
-        contentSignalsMs: number;
-        itemBuildMs: number;
-      };
-      contentHash?: string;
-    }>;
-  }>("/api/items");
-  const createdLibraryItem = library.items.find((item) => item.id === created.id);
-  assert.ok(createdLibraryItem);
-  assert.equal(createdLibraryItem.enrichmentState, "needs_connector");
-  assert.equal(createdLibraryItem.sourceAccess, "connector_required");
-  assert.equal(createdLibraryItem.requiredConnector, "feishu");
-  assert.equal(createdLibraryItem.recognitionVersion, 1);
-  assert.match(createdLibraryItem.recognizedAt ?? "", /^20/);
-  assert.equal(typeof createdLibraryItem.recognitionDurationMs, "number");
-  assert.equal(createdLibraryItem.recognitionTiming?.totalMs, createdLibraryItem.recognitionDurationMs);
-  assert.equal(typeof createdLibraryItem.recognitionTiming?.sourceAdapterMs, "number");
-  assert.match(createdLibraryItem.contentHash ?? "", /^[a-f0-9]{64}$/);
-
-  const feishuCaptureEvents = await getJson<{
-    events: Array<{
-      itemId?: string;
-      sourceUrl: string;
-      captureMethod: string;
-      snapshotBytes: number;
-      resultState: string;
-      recognitionDurationMs?: number;
-      contentHash?: string;
-    }>;
-  }>("/api/capture-events?limit=10");
-
-  assert.ok(feishuCaptureEvents.events.some((event) => event.itemId === created.id && event.resultState === "processing"));
-  assert.ok(
-    feishuCaptureEvents.events.some(
-      (event) =>
-        event.itemId === created.id &&
-        event.resultState === "needs_connector" &&
-        event.captureMethod === "url_fetch" &&
-        event.snapshotBytes === 0 &&
-        typeof event.recognitionDurationMs === "number" &&
-        /^[a-f0-9]{64}$/.test(event.contentHash ?? "")
-    )
-  );
-
-  const patched = await patchJson<{ id: string; status: string; favorite: boolean }>(`/api/items/${created.id}`, {
-    status: "reading",
-    favorite: true
-  });
-
-  assert.equal(patched.status, "reading");
-  assert.equal(patched.favorite, true);
-
-  const privateFeishuText = Array.from(
-    { length: 8 },
-    (_, index) =>
-      `Private Feishu refresh paragraph ${index + 1} proves that manual refresh reuses the original browser snapshot and preserves user workflow fields.`
-  ).join(" ");
-  const privateFeishu = await postJson<{
-    id: string;
-    enrichmentState: string;
-    captureInput?: unknown;
-  }>("/api/items", {
-    url: "https://bytedance.larkoffice.com/docx/HuntterPrivateRefreshDoc",
-    tags: ["private"],
-    note: "initial private note",
+    url: "https://example.com/article",
     snapshot: {
-      url: "https://bytedance.larkoffice.com/docx/HuntterPrivateRefreshDoc",
-      title: "Private Feishu Refresh Doc",
-      siteName: "Feishu",
-      textContent: privateFeishuText,
-      html: `<main><h1>Private Feishu Refresh Doc</h1><p>${privateFeishuText}</p></main>`
+      url: "https://example.com/article",
+      title: "Snapshot first capture",
+      textContent: articleText,
+      excerpt: articleText.slice(0, 280),
+      siteName: "Example",
+      html: `<html><body><article><h1>Snapshot first capture</h1><p>${articleText}</p></article></body></html>`
     }
   });
+  assert.equal(article.enrichmentState, "processing");
 
-  assert.equal(privateFeishu.enrichmentState, "processing");
-  assert.equal("captureInput" in privateFeishu, false);
-
-  const recognizedPrivateFeishu = await waitForItem<{
+  const recognizedArticle = await waitForItem<{
     id: string;
     enrichmentState: string;
-    sourceAccess?: string;
     readableText?: string;
     recognitionDurationMs?: number;
-    recognitionTiming?: {
-      totalMs: number;
-      sourceAdapterMs: number;
-      contentSignalsMs: number;
-      itemBuildMs: number;
-    };
     captureInput?: unknown;
-  }>(privateFeishu.id, "ready");
-  assert.equal(recognizedPrivateFeishu.sourceAccess, "browser_snapshot");
-  assert.match(recognizedPrivateFeishu.readableText ?? "", /manual refresh reuses the original browser snapshot/);
-  assert.equal("captureInput" in recognizedPrivateFeishu, false);
+  }>(article.id, "ready");
+  assert.ok(recognizedArticle.readableText && recognizedArticle.readableText.length >= 200);
+  assert.equal(typeof recognizedArticle.recognitionDurationMs, "number");
+  assert.equal("captureInput" in recognizedArticle, false);
 
-  const patchedPrivateFeishu = await patchJson<{
+  const patched = await patchJson<{
     id: string;
     status: string;
     favorite: boolean;
-    note?: string;
     tags: string[];
-  }>(`/api/items/${privateFeishu.id}`, {
+  }>(`/api/items/${article.id}`, {
     status: "reading",
     favorite: true,
-    note: "user refresh note",
-    tags: ["user-tag"]
+    tags: ["smoke"]
   });
+  assert.equal(patched.status, "reading");
+  assert.equal(patched.favorite, true);
+  assert.deepEqual(patched.tags, ["smoke"]);
 
-  assert.equal(patchedPrivateFeishu.status, "reading");
-  assert.equal(patchedPrivateFeishu.favorite, true);
-  assert.equal(patchedPrivateFeishu.note, "user refresh note");
-  assert.deepEqual(patchedPrivateFeishu.tags, ["user-tag"]);
-
-  const refreshedPrivateFeishu = await postJson<{
+  const refreshed = await postJson<{
     id: string;
     enrichmentState: string;
-    sourceAccess?: string;
     status: string;
     favorite: boolean;
-    note?: string;
     tags: string[];
     readableText?: string;
-    recognitionDurationMs?: number;
-    recognitionTiming?: {
-      totalMs: number;
-      sourceAdapterMs: number;
-      contentSignalsMs: number;
-      itemBuildMs: number;
-    };
-    captureInput?: unknown;
-  }>(`/api/items/${privateFeishu.id}/enrich`, undefined, 200);
+  }>(`/api/items/${article.id}/enrich`, undefined, 200);
+  assert.equal(refreshed.enrichmentState, "ready");
+  assert.equal(refreshed.status, "reading");
+  assert.equal(refreshed.favorite, true);
+  assert.ok(refreshed.tags.includes("smoke"));
+  assert.ok(refreshed.readableText && refreshed.readableText.length >= 200);
 
-  assert.equal(refreshedPrivateFeishu.enrichmentState, "ready");
-  assert.equal(refreshedPrivateFeishu.sourceAccess, "browser_snapshot");
-  assert.equal(refreshedPrivateFeishu.status, "reading");
-  assert.equal(refreshedPrivateFeishu.favorite, true);
-  assert.equal(refreshedPrivateFeishu.note, "user refresh note");
-  assert.ok(refreshedPrivateFeishu.tags.includes("user-tag"));
-  assert.equal(typeof refreshedPrivateFeishu.recognitionDurationMs, "number");
-  assert.equal(refreshedPrivateFeishu.recognitionTiming?.totalMs, refreshedPrivateFeishu.recognitionDurationMs);
-  assert.match(refreshedPrivateFeishu.readableText ?? "", /manual refresh reuses the original browser snapshot/);
-  assert.equal("captureInput" in refreshedPrivateFeishu, false);
-
-  const allCaptureEvents = await getJson<{
+  const captureEvents = await getJson<{
     events: Array<{
       itemId?: string;
-      captureMethod: string;
       snapshotBytes: number;
       resultState: string;
     }>;
   }>("/api/capture-events?limit=20");
+  assert.ok(captureEvents.events.some((event) => event.itemId === article.id && event.resultState === "ready" && event.snapshotBytes > 0));
+  assert.equal(JSON.stringify(captureEvents).includes(articleText), false);
 
-  assert.ok(
-    allCaptureEvents.events.some(
-      (event) =>
-        event.itemId === privateFeishu.id &&
-        event.resultState === "ready" &&
-        event.captureMethod === "extension_snapshot" &&
-        event.snapshotBytes > 0
-    )
-  );
-  assert.equal(JSON.stringify(allCaptureEvents).includes(privateFeishuText), false);
+  const deleted = await deleteRaw(`/api/items/${article.id}`);
+  assert.equal(deleted.status, 204, "DELETE /api/items/:id must return 204");
 
   console.log("api smoke passed");
 } finally {
@@ -812,17 +137,16 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function deleteJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, { method: "DELETE" });
-  assert.equal(response.ok, true, `${path} returned HTTP ${response.status}`);
-  return (await response.json()) as T;
+async function postRaw(path: string, body: unknown): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" }
-  });
+async function deleteRaw(path: string): Promise<Response> {
+  return fetch(`${baseUrl}${path}`, { method: "DELETE" });
 }
 
 function wait(ms: number): Promise<void> {
@@ -830,11 +154,11 @@ function wait(ms: number): Promise<void> {
 }
 
 async function waitForItem<T extends { id: string; enrichmentState: string }>(id: string, state: string): Promise<T> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     const library = await getJson<{ items: T[] }>("/api/items");
     const item = library.items.find((candidate) => candidate.id === id);
     if (item?.enrichmentState === state) return item;
-    await wait(25);
+    await wait(50);
   }
 
   throw new Error(`Timed out waiting for ${id} to reach ${state}`);
