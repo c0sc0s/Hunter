@@ -166,6 +166,18 @@ test("detectSupportedResourceInPage gates X by source route before generic DOM s
   } finally {
     article();
   }
+
+  const userReportedStatus = withPage(
+    "<!doctype html><html><body><main></main></body></html>",
+    "https://x.com/MinLiBuilds/status/2062068646902689895"
+  );
+  try {
+    const result = detectSupportedResourceInPage();
+    assert.equal(result.supported, true);
+    assert.equal(result.kind, "post");
+  } finally {
+    userReportedStatus();
+  }
 });
 
 test("detectSupportedResourceInPage supports video-shaped pages", () => {
@@ -218,6 +230,15 @@ test("detectSupportedResourceInPage only accepts concrete YouTube and Vimeo vide
     assert.equal(result.kind, "video");
   } finally {
     youtubeWatch();
+  }
+
+  const userReportedYoutubeWatch = withPage("<!doctype html><html><body></body></html>", "https://www.youtube.com/watch?v=PLyCki2K0Lg");
+  try {
+    const result = detectSupportedResourceInPage();
+    assert.equal(result.supported, true);
+    assert.equal(result.kind, "video");
+  } finally {
+    userReportedYoutubeWatch();
   }
 
   const vimeoHome = withPage("<!doctype html><html><body></body></html>", "https://vimeo.com/");

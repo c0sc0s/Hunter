@@ -166,6 +166,55 @@ assert.equal(privateSnapshot.extractionState, "ready");
 assert.match(privateSnapshot.contentHtml ?? "", /Private workspace paragraph 1/);
 assert.doesNotMatch(privateSnapshot.contentHtml ?? "", /<script/i);
 
+const alternateRootText = Array.from(
+  { length: 5 },
+  (_, index) =>
+    `Alternate candidate paragraph ${index + 1} preserves the actual article body when a single focused-root snapshot captured a stale navigation panel instead.`
+).join(" ");
+const alternateRootSnapshot = await extractContent({
+  url: "https://example.com/alternate-root",
+  snapshot: {
+    url: "https://example.com/alternate-root",
+    title: "Alternate Root",
+    textContent:
+      "Home Pricing Login Subscribe Account Settings Navigation Panel Project shortcuts and notification filters repeated enough to look substantial.",
+    html: `<!doctype html>
+      <html>
+        <head><title>Wrong focused root</title></head>
+        <body><aside><p>Home Pricing Login Subscribe Account Settings Navigation Panel Project shortcuts and notification filters repeated enough to look substantial.</p></aside></body>
+      </html>`,
+    contentCandidates: [
+      {
+        kind: "focused_root",
+        selector: "aside",
+        score: 260,
+        text: "Home Pricing Login Subscribe Account Settings Navigation Panel Project shortcuts and notification filters repeated enough to look substantial."
+      },
+      {
+        kind: "content_root",
+        selector: "article#real-story",
+        score: 1400,
+        text: alternateRootText,
+        html: `<!doctype html>
+          <html>
+            <head><title>Alternate Root</title></head>
+            <body>
+              <article id="real-story">
+                <h1>Alternate Root</h1>
+                <p>${alternateRootText}</p>
+              </article>
+            </body>
+          </html>`
+      }
+    ]
+  }
+});
+
+assert.equal(alternateRootSnapshot.extractionState, "ready");
+assert.match(alternateRootSnapshot.readableText, /Alternate candidate paragraph/);
+assert.doesNotMatch(alternateRootSnapshot.readableText, /Navigation Panel/);
+assert.match(alternateRootSnapshot.contentHtml ?? "", /real-story|Alternate candidate paragraph/);
+
 const bilibiliShapedUrl = "https://www.bilibili.com/video/BV1hunter";
 const bilibiliShaped = await extractContent({
   url: bilibiliShapedUrl,

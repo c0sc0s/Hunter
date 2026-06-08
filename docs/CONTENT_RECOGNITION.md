@@ -4,7 +4,7 @@
 
 Hunter should capture what the user actually meant to save, not merely store a URL preview. The recognition pipeline must be deterministic, fast enough for background processing, and honest about capture quality.
 
-AI is intentionally out of scope for the current system. Summary, tags, reading time, cover image, and confidence are Content Signals derived from captured content.
+AI is intentionally out of scope for content recognition. Summary, tags, reading time, cover image, and confidence are Content Signals derived from captured content. The optional agent module can run local LLM classification after an item exists, but that result must not decide extraction state or replace deterministic recognition output.
 
 ## Library Decision
 
@@ -95,7 +95,7 @@ Canonical URLs remove hash fragments and known tracking parameters such as `utm_
 - Validate Source Adapter output before item building so invalid URLs, unsafe `contentHtml`, fake `ready` states, and fake `failed` states fail loudly.
 - Parse all JSON-LD scripts and `@graph` structures by selecting Article-like nodes before generic WebSite/Breadcrumb nodes.
 - Prefer structured titles and images from Open Graph, Twitter Card, and Article JSON-LD before generic document titles.
-- Score cover images through the shared Cover Image module so logos, favicons, sprites, placeholders, known platform-default Open Graph images, and avatars do not beat article, Open Graph, structured-data, or source-specific images.
+- Score cover images through the shared Cover Image module so logos, favicons, sprites, placeholders, known platform-default Open Graph images, and avatars do not beat structured-data thumbnails, source-specific media, or strong in-content article images. Site-level metadata is a candidate, not an unconditional winner.
 - Keep the quality gate pure and tested in `server/sources/contentQuality.ts`.
 - Run Mozilla Readability only when selected text and Defuddle output are below quality thresholds.
 
@@ -142,10 +142,13 @@ The extension does not blindly store the first chunk of the full page DOM. It ch
 - Otherwise score common article containers by text, paragraphs, and images.
 - Fall back to `body` only when no useful content root exists.
 - Serialize metadata-rich `<head>` elements plus the focused root HTML, capped by size.
-- Collect image candidates from metadata, focused-root images, `srcset`/lazy-loading attributes, and inline `background-image` declarations.
+- Preserve a bounded `contentCandidates` list containing the focused root, alternate high-scoring roots, and a text-only body fallback so the server can choose stronger text for parsing, snapshot fallback, and later classification.
+- Collect structured image candidates from metadata, focused-root images, `srcset`/lazy-loading attributes, and inline `background-image` declarations.
+- Keep each image candidate's URL, score, source kind, dimensions, alt/context text, and focused-root membership where available.
 - Rank candidates before applying the fixed candidate cap so source-specific media and focused-root article images are not displaced by avatars, icons, default platform previews, or sidebar images.
+- Let the server re-score the bounded candidate pool together with JSON-LD preferred thumbnails and HTML-derived candidates, so a strong body/figure image can beat a generic site-level `og:image`. If every candidate is weak or unusable, the item has no cover.
 
-This gives private, logged-in, and dynamic pages better Canonical Content without increasing API payload size.
+This gives private, logged-in, and dynamic pages better Canonical Content while keeping the extra payload bounded.
 
 ## Source Rules
 

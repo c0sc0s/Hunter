@@ -1,7 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { Defuddle } from "defuddle/node";
 import { JSDOM } from "jsdom";
-import type { PageSnapshot } from "../../shared/types";
+import type { PageSnapshot, PageSnapshotContentCandidate } from "../../shared/types";
 import { contentHtmlFromSnapshot, contentHtmlFromText, sanitizeContentHtml } from "./contentHtml";
 import type { SourceType } from "../../shared/types";
 import { detectContentForm, type ContentForm } from "./contentForm";
@@ -17,14 +17,18 @@ export const genericWebAdapter: SourceAdapter = {
   canHandle: () => true,
   async extract({ url, snapshot }) {
     const normalizedUrl = normalizeUrl(url);
-    const html = snapshot.html ?? "";
+    const browserSnapshotCandidate = pickBrowserSnapshotCandidate(snapshot);
+    const html = snapshot.html ?? browserSnapshotCandidate.html ?? "";
     const dom = new JSDOM(html, { url: normalizedUrl });
     const document = dom.window.document;
     const contentForm = detectContentForm(document);
     const metadata = extractMetadata(document, normalizedUrl, snapshot, contentForm.form);
-    const snapshotText = cleanText(snapshot.textContent);
+    const snapshotText = browserSnapshotCandidate.text;
     const selectedText = cleanText(snapshot.selectedText);
-    const parserDocument = hasReadySelectedText(selectedText) ? undefined : stripStructuralNoise(document.cloneNode(true) as Document);
+    const parserHtml = browserSnapshotCandidate.html ?? html;
+    const parserDocument = hasReadySelectedText(selectedText)
+      ? undefined
+      : stripStructuralNoise(new JSDOM(parserHtml, { url: normalizedUrl }).window.document.cloneNode(true) as Document);
     const defuddled = parserDocument ? await parseWithDefuddle(parserDocument, normalizedUrl) : undefined;
     const defuddledText = htmlToText(defuddled?.content, normalizedUrl);
     const article =
@@ -77,7 +81,7 @@ export const genericWebAdapter: SourceAdapter = {
       readableText: quality.readableText,
       contentHtml: pickContentHtml({
         parserHtml: defuddled?.content ?? article?.content,
-        snapshotHtml: snapshot.html,
+        snapshotHtml: browserSnapshotCandidate.html ?? (browserSnapshotCandidate.kind === "body" ? undefined : snapshot.html),
         extractor: quality.extractor,
         readableText: quality.readableText
       }),
@@ -100,6 +104,80 @@ export const genericWebAdapter: SourceAdapter = {
     };
   }
 };
+
+type BrowserSnapshotCandidate = {
+  kind: PageSnapshotContentCandidate["kind"] | "legacy";
+  text: string;
+  html?: string;
+  selector?: string;
+  score?: number;
+  order: number;
+};
+
+function pickBrowserSnapshotCandidate(snapshot: PageSnapshot): BrowserSnapshotCandidate {
+  const candidates: BrowserSnapshotCandidate[] = [
+    {
+      kind: "legacy" as const,
+      text: cleanText(snapshot.textContent),
+      html: snapshot.html,
+      selector: "snapshot.textContent",
+      order: 0
+    },
+    ...(snapshot.contentCandidates ?? []).map((candidate, index) => ({
+      kind: candidate.kind,
+      text: cleanText(candidate.text),
+      html: candidate.html,
+      selector: candidate.selector,
+      score: candidate.score,
+      order: index + 1
+    }))
+  ].filter((candidate) => candidate.text || candidate.html);
+
+  const deduped = dedupeSnapshotCandidates(candidates);
+  return (
+    deduped.sort((a, b) => scoreBrowserSnapshotCandidate(b) - scoreBrowserSnapshotCandidate(a) || a.order - b.order)[0] ?? {
+      kind: "legacy",
+      text: "",
+      html: snapshot.html,
+      selector: "snapshot.textContent",
+      order: 0
+    }
+  );
+}
+
+function dedupeSnapshotCandidates(candidates: BrowserSnapshotCandidate[]): BrowserSnapshotCandidate[] {
+  const seen = new Set<string>();
+  const result: BrowserSnapshotCandidate[] = [];
+  for (const candidate of candidates) {
+    const key = cleanText(candidate.text).slice(0, 500) || cleanText(htmlToText(candidate.html, "https://example.com")).slice(0, 500);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(candidate);
+  }
+  return result;
+}
+
+function scoreBrowserSnapshotCandidate(candidate: BrowserSnapshotCandidate): number {
+  const text = cleanText(candidate.text);
+  if (!text) return candidate.html ? 1 : 0;
+
+  const lengthScore = Math.min(text.length, 1400);
+  const structureScore = Math.min(Math.max(candidate.score ?? 0, 0), 1200) * 0.45;
+  const sentenceScore = Math.min(text.match(/[.!?。！？]/g)?.length ?? 0, 8) * 45;
+  const kindScore =
+    candidate.kind === "content_root" ? 320 : candidate.kind === "focused_root" ? 220 : candidate.kind === "legacy" ? 120 : -420;
+  const noisePenalty = lowSignalSnapshotText(text) ? 420 : 0;
+  return lengthScore + structureScore + sentenceScore + kindScore - noisePenalty;
+}
+
+function lowSignalSnapshotText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  if (/^(home|pricing|login|subscribe|sign in|for you|following|reply|repost|like)\b/.test(normalized)) return true;
+  const words = normalized.match(/[a-z]{3,}/g) ?? [];
+  if (words.length < 12) return false;
+  const unique = new Set(words);
+  return unique.size / words.length < 0.18;
+}
 
 function resolveSourceType(urlSourceType: SourceType, form: ContentForm): SourceType {
   // Only promote when URL routing fell into the generic "article" bucket so

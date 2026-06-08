@@ -15,8 +15,11 @@ function makeFetch(responder: (url: string) => Promise<Response> | Response) {
   return { fn: fn as unknown as typeof fetch, calls };
 }
 
-function ok(status = 200) {
-  return new Response("ok", { status });
+function ok(owner = "standalone", startedAt = "2026-06-04T00:00:00.000Z", status = 200) {
+  return new Response(JSON.stringify({ ok: true, service: "hunter-api", owner, startedAt }), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
 }
 
 function notFound() {
@@ -41,7 +44,7 @@ test("resolveApiBase: returns user value verbatim when non-localhost", async () 
   assert.equal(calls.length, 0, "no probing for remote bases");
 });
 
-test("resolveApiBase: probes candidates and returns first 200", async () => {
+test("resolveApiBase: probes candidates and returns first healthy Hunter API for equal rank", async () => {
   const { fn, calls } = makeFetch((url) => {
     if (url.startsWith("http://127.0.0.1:4317")) return notFound();
     if (url.startsWith("http://127.0.0.1:4318")) return ok();
@@ -55,7 +58,7 @@ test("resolveApiBase: probes candidates and returns first 200", async () => {
 
   const result = await resolveApiBase("http://127.0.0.1:4317");
   assert.equal(result, "http://127.0.0.1:4318");
-  assert.equal(calls.length, 2, "stops probing after first hit");
+  assert.equal(calls.length, 3, "probes all candidates so it can rank competing sidecars");
   assert.match(calls[0].url, /\/api\/health$/);
 });
 
@@ -68,13 +71,62 @@ test("resolveApiBase: probes a configured off-list localhost base before default
   configureApiBase({
     fetch: fn,
     now: () => clock.time,
-    candidates: ["http://127.0.0.1:4317", "http://127.0.0.1:4318"]
+    candidates: ["http://127.0.0.1:4317"]
   });
 
-  const result = await resolveApiBase("http://127.0.0.1:49152");
+  const result = await resolveApiBase("http://127.0.0.1:49152", { preferConfigured: true });
   assert.equal(result, "http://127.0.0.1:49152");
   assert.equal(calls.length, 1, "configured localhost base should win when healthy");
   assert.match(calls[0].url, /^http:\/\/127\.0\.0\.1:49152\/api\/health$/);
+});
+
+test("resolveApiBase: default local discovery prefers packaged Electron sidecar over older dev API", async () => {
+  const { fn } = makeFetch((url) => {
+    if (url.startsWith("http://127.0.0.1:4317")) return ok("electron-dev", "2026-06-04T12:00:00.000Z");
+    if (url.startsWith("http://127.0.0.1:4318")) return ok("electron-packaged", "2026-06-04T11:00:00.000Z");
+    return notFound();
+  });
+  configureApiBase({
+    fetch: fn,
+    now: () => clock.time,
+    candidates: ["http://127.0.0.1:4317", "http://127.0.0.1:4318", "http://127.0.0.1:4319"]
+  });
+
+  const result = await resolveApiBase("http://127.0.0.1:4317");
+  assert.equal(result, "http://127.0.0.1:4318");
+});
+
+test("resolveApiBase: explicit local config wins over automatic sidecar ranking", async () => {
+  const { fn, calls } = makeFetch((url) => {
+    if (url.startsWith("http://127.0.0.1:4317")) return ok("electron-dev", "2026-06-04T12:00:00.000Z");
+    if (url.startsWith("http://127.0.0.1:4318")) return ok("electron-packaged", "2026-06-04T11:00:00.000Z");
+    return notFound();
+  });
+  configureApiBase({
+    fetch: fn,
+    now: () => clock.time,
+    candidates: ["http://127.0.0.1:4317", "http://127.0.0.1:4318"]
+  });
+
+  const result = await resolveApiBase("http://127.0.0.1:4317", { preferConfigured: true });
+  assert.equal(result, "http://127.0.0.1:4317");
+  assert.equal(calls.length, 1, "manual local config probes only the configured origin");
+});
+
+test("resolveApiBase: ignores non-Hunter health responses", async () => {
+  const { fn } = makeFetch((url) => {
+    if (url.startsWith("http://127.0.0.1:4317")) return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    if (url.startsWith("http://127.0.0.1:4318")) return ok("electron-dev");
+    return notFound();
+  });
+  configureApiBase({
+    fetch: fn,
+    now: () => clock.time,
+    candidates: ["http://127.0.0.1:4317", "http://127.0.0.1:4318"]
+  });
+
+  const result = await resolveApiBase("http://127.0.0.1:4317");
+  assert.equal(result, "http://127.0.0.1:4318");
 });
 
 test("resolveApiBase: caches a successful probe for TTL", async () => {
@@ -90,18 +142,18 @@ test("resolveApiBase: caches a successful probe for TTL", async () => {
   });
 
   await resolveApiBase("http://127.0.0.1:4317");
-  assert.equal(n, 1, "one probe");
-  assert.equal(calls.length, 1);
+  assert.equal(n, 2, "one full candidate scan");
+  assert.equal(calls.length, 2);
 
   // Within TTL: cache hit, no new probes.
   clock.time += PROBE_CACHE_TTL_MS - 1;
   await resolveApiBase("http://127.0.0.1:4317");
-  assert.equal(n, 1, "cache hit within TTL");
+  assert.equal(n, 2, "cache hit within TTL");
 
   // After TTL: re-probes.
   clock.time += 2;
   await resolveApiBase("http://127.0.0.1:4317");
-  assert.equal(n, 2, "re-probe after TTL");
+  assert.equal(n, 4, "re-probe after TTL");
 });
 
 test("resolveApiBase: does NOT cache a failed probe", async () => {
@@ -110,7 +162,7 @@ test("resolveApiBase: does NOT cache a failed probe", async () => {
     attempt += 1;
     // First three attempts (one round of candidates) all fail.
     if (attempt <= 3) return notFound();
-    return ok();
+    return attempt === 4 ? ok() : notFound();
   });
   configureApiBase({
     fetch: fn,
@@ -126,7 +178,7 @@ test("resolveApiBase: does NOT cache a failed probe", async () => {
   // cache the failure.
   const second = await resolveApiBase("http://127.0.0.1:4317");
   assert.equal(second, "http://127.0.0.1:4317");
-  assert.equal(calls.length, 4, "re-probed after failure");
+  assert.equal(calls.length, 6, "re-probed all candidates after failure");
 });
 
 test("resolveApiBase: aborted/timed-out probe is treated as miss", async () => {
@@ -171,8 +223,8 @@ test("listLocalCandidates: does not duplicate when user base already in list", (
   configureApiBase({
     candidates: ["http://127.0.0.1:4317", "http://127.0.0.1:4318"]
   });
-  const candidates = listLocalCandidates("http://127.0.0.1:4317");
-  assert.deepEqual(candidates, ["http://127.0.0.1:4317", "http://127.0.0.1:4318"]);
+  const candidates = listLocalCandidates("http://127.0.0.1:4318");
+  assert.deepEqual(candidates, ["http://127.0.0.1:4318", "http://127.0.0.1:4317"]);
 });
 
 test("listLocalCandidates: ignores non-localhost user base", () => {

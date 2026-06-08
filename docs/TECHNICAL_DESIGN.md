@@ -10,6 +10,8 @@ flowchart LR
   API --> Store["Repository Adapter"]
   API --> Extractor["Defuddle + Readability + Source Adapters"]
   Extractor --> Signals["Deterministic Content Signals"]
+  API --> Agent["Optional Agent Classification"]
+  Agent --> LLM["Ollama / OpenAI-Compatible Provider"]
 ```
 
 ## Project Layout
@@ -85,19 +87,27 @@ type CaptureEvent = {
 
 ## API
 
-- `GET /api/health`
+- `GET /api/health` returns `{ ok, service: "hunter-api", owner, startedAt, pid }` so local clients can distinguish competing sidecars during discovery.
 - `GET /api/items?q=&filter=&sourceType=&limit=&offset=`
 - `POST /api/items` (snapshot required)
 - `PATCH /api/items/:id`
 - `DELETE /api/items/:id`
 - `POST /api/items/:id/enrich`
 - `GET /api/capture-events?limit=`
+- `GET /api/agent/local-llm`
+- `GET /api/agent/settings`
+- `PATCH /api/agent/settings`
+- `POST /api/agent/items/:id/classify`
 
 `POST /api/items` requires a `snapshot` payload from the browser extension and returns 400 when it is missing. There is no longer any server-side URL fetch or connector entry point.
 
 `GET /api/items` returns the current page, global library stats, and page metadata. JSON and SQLite adapters share the same query semantics; SQLite executes search through FTS.
 
 `GET /api/capture-events` returns recent Capture Event diagnostics. Events include source URL, snapshot byte count, result state, timing, and error context, but never raw browser snapshot HTML or text.
+
+Agent endpoints are optional and isolated from recognition. `GET /api/agent/settings` and `PATCH /api/agent/settings` manage the local provider configuration used by the Settings modal; raw API keys are stored server-side and never returned to the renderer. `GET /api/agent/local-llm` reports configured provider reachability and selected model availability. `POST /api/agent/items/:id/classify` sends already-captured item fields to the configured model, schema-validates the classification/understanding JSON, stores it on the item as `agentClassification`, and returns the updated public item. `POST /api/agent/items/classify-missing` incrementally classifies only ready/partial items with missing or stale content categories, one model call per item. Supported providers are local Ollama and OpenAI-compatible Chat Completions endpoints such as DeepSeek. Model failures do not affect capture, recognition jobs, or item refresh.
+
+Agent-generated `contentCategory` is the user-facing category bucket. Before each item classification, Hunter supplies existing category summaries collected from previously classified items; the model should reuse a category when it clearly fits and generate a new concise category only when it does not. `LibraryStats.agentCategories` exposes all category counts, and `GET /api/items?agentCategoryId=<id>` filters the library by that generated category. These categories remain separate from deterministic tags and from `primaryCategory`, which is retained as a coarse model label.
 
 ## Ingestion Pipeline
 
@@ -122,7 +132,7 @@ The app now uses source adapters instead of one universal parser.
 - `server/sources/contentHtml.ts`: DOMPurify-backed sanitizer for parser HTML before storage.
 - `server/sources/contentQuality.ts`: pure quality gate for candidate selection, confidence, extraction state, and fallback decisions.
 - `server/sources/extractedContentContract.ts`: runtime contract validation for Source Adapter output before item building.
-- `server/sources/coverImage.ts`: shared cover image selection via `metascraper-image` for full HTML (OG / Twitter / JSON-LD / itemprop / article images) with a URL-quality guard for weak/default platform images, plus a sync candidate-list fallback for snapshot previews.
+- `server/sources/coverImage.ts`: shared cover image selection that scores one snapshot-derived candidate pool from preferred JSON-LD media thumbnails, HTML metadata, HTML article images, and extension image candidates. It filters weak/default platform images and lets strong in-content candidates beat site-level Open Graph images when those look like generic logos or share assets.
 - `server/sources/pdf.ts`: PDF recognition from the snapshot text the extension captures from the rendered PDF viewer.
 - Video hosts (YouTube, Vimeo, Bilibili, Tencent, Youku, …) flow through `genericWebAdapter`, which detects the page form via `contentForm.ts`, extracts `VideoObject` metadata via `jsonLd.ts`, prefers `og:description` when JSON-LD `description` is empty, and selects the cover via `coverImage.ts`. No host-specific video adapter — the JSON-LD/og pipeline serves any standards-compliant video page.
 - `server/contentSignals.ts`: deterministic summary, tag, and reading-time derivation from Canonical Content and Sanitized Content HTML.
@@ -144,14 +154,14 @@ The extension requests minimum practical permissions:
 - `activeTab`: temporary access to the current page after user action.
 - `alarms`: retry queued offline saves while the extension is alive.
 - `scripting`: inject extractor only when saving.
-- `notifications`: show an unsupported-resource bubble when the current page is not a supported article, video, or X post.
+- `notifications`: show save/status notifications from the background worker; the unsupported-resource notification path is dormant while the extension support gate is disabled.
 - `storage`: save API base and draft preferences.
 - `contextMenus`: right-click save page.
 - `unlimitedStorage`: keep the bounded offline save queue from being evicted by small extension storage quotas.
 
-The extension sends page snapshots to `http://127.0.0.1:4317/api/items` by default. Save always carries a snapshot; there is no URL-only entry point. Its injected extractor prefers a focused content root over a blind full-page DOM slice, preserving metadata while avoiding huge shells, navigation, and sidebars where possible. It ranks image candidates from metadata, focused-root images, responsive/lazy image attributes, and inline background images before applying the candidate cap. It caps snapshot HTML, text, selected text, and image candidates before sending the request. The background worker exposes an internal save-tab message path so popup, context menu, keyboard shortcut, and tests can share the same extraction and POST behavior. The popup no longer owns duplicate extraction or POST logic; it collects UI inputs and delegates Save to the background path. After save, the web client refreshes only when the user clicks `Reload` or runs `/reload`; there is no frontend polling loop. Capture Events have a separate sidebar panel and `/events` command for manual diagnostics refresh.
+The extension sends page snapshots to `http://127.0.0.1:4317/api/items` by default. Save always carries a snapshot; there is no URL-only entry point. Its injected extractor prefers a focused content root over a blind full-page DOM slice, preserving metadata while avoiding huge shells, navigation, and sidebars where possible. It also ships a bounded `contentCandidates` list with the focused root, high-scoring alternate content roots, and a text-only body fallback, so server recognition can recover when a single focused root is too narrow or noisy. It ranks image candidates from metadata, focused-root images, responsive/lazy image attributes, and inline background images before applying the candidate cap, and sends structured candidate fields (`url`, `source`, `score`, dimensions, alt/context, and content-root membership) so server cover selection can choose the best usable index cover instead of trusting metadata order alone. It caps snapshot HTML, text, selected text, content candidates, and image candidates before sending the request. The background worker exposes an internal save-tab message path so popup, context menu, keyboard shortcut, and tests can share the same extraction and POST behavior. The popup no longer owns duplicate extraction or POST logic; it collects UI inputs and delegates Save to the background path. After save, the web client refreshes only when the user clicks `Reload` or runs `/reload`; there is no frontend polling loop. Capture Events have a separate sidebar panel and `/events` command for manual diagnostics refresh.
 
-Before showing the save form or accepting a background/context-menu save, the extension runs a lightweight support gate in the captured tab. Source-specific route checks run first: X/Twitter post detail URLs and X article URLs are allowed, while X feeds, profiles, search pages, and other timelines are rejected before generic DOM scoring. Non-X pages then use deterministic page signals aligned with the server-side Content Form Detector: Open Graph type, Twitter player cards, JSON-LD `@type`, focused article roots, weak `<video>` tiebreakers, and server-aligned YouTube/Vimeo host hints. Supported article, video, and X post resources show the popup save form; unsupported resources show an unsupported-type bubble and are not posted to the API. This gate is only a UX preflight. The server recognition pipeline still owns final `sourceType`, extraction state, content quality, and canonical metadata after it receives the snapshot.
+The extension previously ran a lightweight support gate before showing the save form or accepting background/context-menu saves. That gate is currently disabled via `CONTENT_SUPPORT_GATE_ENABLED=false` in `extension/src/contentSupport.js` after internal article pages proved the detector too narrow. The detector code remains for future redesign, but active save paths now show the popup form and post snapshots for any injectable browser page. The server recognition pipeline still owns final `sourceType`, extraction state, content quality, and canonical metadata after it receives the snapshot.
 
 `pnpm golden:extension` installs the real Manifest V3 extension into Chromium against isolated local API, web, and article fixture servers. The test temporarily patches only the copied manifest to grant random localhost ports, then verifies ready browser-snapshot recognition, `chrome.action.openPopup()` toolbar action launch, visible popup Save, Web manual Reload, Capture Events, stripped public `captureInput`, and no raw snapshot text in the event stream. Playwright does not expose Chrome's native toolbar bubble as an interactable page target in this workspace, so the Save click remains on the observable popup page that uses the same production popup UI and background save pipeline.
 

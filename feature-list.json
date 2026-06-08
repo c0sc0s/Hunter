@@ -1,8 +1,191 @@
 {
   "version": 1,
-  "updatedAt": "2026-06-04",
+  "updatedAt": "2026-06-08",
   "statusValues": ["ready", "in_progress", "blocked", "done", "cancelled"],
   "features": [
+    {
+      "id": "agent-incremental-category-filters",
+      "title": "Classify saved items incrementally into reusable AI topic filters",
+      "status": "done",
+      "scope": [
+        "Extend agent classification with a user-facing `contentCategory` bucket that is separate from deterministic tags and the coarse `primaryCategory` label.",
+        "Before each classification, pass existing generated categories to the model so it can reuse a matching category or create a new concise category only when none fit.",
+        "Add an incremental classification endpoint that processes only ready/partial items with missing or stale agent categories, using item `contentHash` to avoid unnecessary reclassification.",
+        "Keep the batch endpoint as orchestration over one model call per item so result mapping, retry behavior, and future on-device queue execution remain simple.",
+        "Expose generated category counts through `LibraryStats.agentCategories` and support `GET /api/items?agentCategoryId=<id>` filtering in both JSON and SQLite repositories.",
+        "Add a modern Search-below AI topic filter UI in the middle library column, with All/topic chips, counts, an Analyze action, background incremental classification when the model is reachable, and compact error feedback."
+      ],
+      "outOfScope": [
+        "Using LLM categories to mutate user tags, deterministic Content Signals, source recognition, extraction state, or recognition confidence.",
+        "Combining multiple saved items into one model prompt; that can be optimized later after partial-failure and result-alignment semantics are defined.",
+        "Adding a durable background job queue for agent classification; this slice keeps it app-triggered and API-driven."
+      ],
+      "dependencies": ["agent-local-llm-classification"],
+      "definitionOfDone": [
+        "Classifications store a normalized `contentCategory` with stable id, label, optional description, and source=`existing|new`.",
+        "Single-item and incremental classification prompts include existing category summaries and normalize model output back to existing ids when possible.",
+        "Incremental classification skips processing/failed items and already-fresh classifications.",
+        "Library responses include generated category counts and can be filtered by generated category id.",
+        "Search-below AI topic chips render from category stats and can trigger incremental classification manually while auto-classification runs only when the configured LLM is reachable.",
+        "Tests cover category generation, category reuse, incremental classification, and category filtering."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:agent",
+          "proves": "The mocked Ollama/DeepSeek agent flow generates and reuses content categories, runs incremental classification, and filters by generated category id."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The extended shared types, repository APIs, agent prompt schema, and UI hooks type-check together."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The agent, repository, and UI edits satisfy the zero-warning lint gate."
+        },
+        {
+          "command": "pnpm build",
+          "proves": "The Search-below AI topic UI compiles into the production renderer bundle."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-08",
+          "commands": [
+            "./node_modules/.bin/tsx server/tests/agentLocalLlm.test.ts",
+            "./node_modules/.bin/tsx server/tests/sqliteRepository.test.ts",
+            "./node_modules/.bin/tsc --noEmit",
+            "./node_modules/.bin/eslint shared/types.ts server/agents/contentCategories.ts server/agents/contentClassifier.ts server/index.ts server/repositories/types.ts server/repositories/listQuery.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/repository.ts server/store.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/lib/agent.ts src/hooks/useLibrary.ts src/components/AgentCategoryFilters.tsx src/components/LibraryToolbar.tsx src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/lib/stats.ts src/constants.ts --max-warnings=0",
+            "pnpm verify"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "shared/types.ts",
+            "server/agents/contentCategories.ts",
+            "server/agents/contentClassifier.ts",
+            "server/index.ts",
+            "server/repositories/types.ts",
+            "server/repositories/listQuery.ts",
+            "server/repositories/jsonRepository.ts",
+            "server/repositories/sqliteRepository.ts",
+            "server/repository.ts",
+            "server/store.ts",
+            "server/tests/agentLocalLlm.test.ts",
+            "src/lib/api.ts",
+            "src/lib/agent.ts",
+            "src/hooks/useLibrary.ts",
+            "src/components/AgentCategoryFilters.tsx",
+            "src/components/LibraryToolbar.tsx",
+            "src/pages/LibraryPage.tsx",
+            "src/components/ItemDetail.tsx",
+            "src/lib/stats.ts",
+            "src/constants.ts",
+            "src/styles.css",
+            "docs/AGENT_LOCAL_LLM.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "`agentLocalLlm.test.ts` mocks Ollama `/api/tags` and `/api/generate` plus DeepSeek `/models` and `/chat/completions`; it does not require a local Ollama install, real model weights, or a real DeepSeek API key.",
+          "notes": "The fixture proves the first classified item creates `AI Systems`, the second incremental item reuses `ai-systems` through `existingCategoryId`, and `GET /api/items?agentCategoryId=ai-systems` returns both items. Full `pnpm verify` passed after refreshing Darwin visual baselines for the AI topics, Agent detail, and Settings UI."
+        }
+      ],
+      "next": "Next slices: add a durable agent job queue/progress surface, tune multi-item batching if remote-token costs matter, or replace the DeepSeek mock path with the future embedded on-device model runtime."
+    },
+    {
+      "id": "agent-local-llm-classification",
+      "title": "Add optional LLM agent classification through Ollama and OpenAI-compatible providers",
+      "status": "done",
+      "scope": [
+        "Add an isolated server-side agent module that can probe a configured LLM provider and run schema-validated JSON generation.",
+        "Add an OpenAI-compatible Chat Completions provider path and a DeepSeek preset using `https://api.deepseek.com`.",
+        "Add item classification that reads only existing captured Hunter item fields and returns primary category, intent, topics, summary, key points, confidence, language, and follow-up signal.",
+        "Expose `GET /api/agent/local-llm` for runtime/model status and `POST /api/agent/items/:id/classify` for one-off item classification.",
+        "Expose `GET /api/agent/settings` and `PATCH /api/agent/settings` plus a sidebar Settings modal for selecting Ollama, DeepSeek, or another OpenAI-compatible provider without env vars.",
+        "Persist agent output as `agentClassification` on saved items and show it in the item detail panel.",
+        "Keep agent output optional so capture, source recognition, extraction state, deterministic Content Signals, refresh, and user tags stay unchanged.",
+        "Document Ollama as the default local development/runtime path, DeepSeek as the first third-party provider path, and fully embedded on-device models as a later runtime track."
+      ],
+      "outOfScope": [
+        "Using LLM output to decide sourceType, extraction state, recognition confidence, tags, or summary in the deterministic recognition pipeline.",
+        "Bundling a native on-device model runtime or model weights into the Electron app.",
+        "Bundling provider SDKs; provider calls use `fetch`."
+      ],
+      "dependencies": [],
+      "definitionOfDone": [
+        "LLM status endpoint reports configured provider, base URL, selected model, available models when available, and model availability.",
+        "Settings modal stores provider, base URL, model, and API key while the API returns only whether a key is configured.",
+        "DeepSeek status and classification work through the OpenAI-compatible `/models` and `/chat/completions` request shapes.",
+        "Classification endpoint validates model JSON with an explicit schema and returns stable 502/503 failures for invalid model output or unavailable runtime.",
+        "Classification results persist in JSON and SQLite repositories and render in the item detail panel.",
+        "Agent tests mock Ollama so local verification does not require a model install.",
+        "Documentation records the runtime boundary and verification command."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:agent",
+          "proves": "The LLM status and item-classification API paths work against mocked Ollama and DeepSeek runtimes, including invalid JSON and unavailable-runtime behavior."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The agent module and API routes type-check with the rest of the server."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The agent module, API routes, and tests satisfy the zero-warning lint gate."
+        },
+        {
+          "command": "pnpm format:check",
+          "proves": "The edited agent, API, package, and documentation files stay Prettier-clean."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-05",
+          "commands": [
+            "./node_modules/.bin/tsx server/tests/agentLocalLlm.test.ts",
+            "./node_modules/.bin/prettier --check shared/types.ts server/agents/localLlm.ts server/agents/contentClassifier.ts server/agents/llmSettings.ts server/repositories/types.ts server/repository.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/index.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/hooks/useLibrary.ts src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/components/LibrarySidebar.tsx src/components/SettingsPanel.tsx src/styles.css docs/AGENT_LOCAL_LLM.md docs/INDEX.md docs/TECHNICAL_DESIGN.md docs/CONTENT_RECOGNITION.md progress.md session-handoff.md package.json feature-list.json",
+            "./node_modules/.bin/eslint shared/types.ts server/agents/localLlm.ts server/agents/contentClassifier.ts server/agents/llmSettings.ts server/repositories/types.ts server/repository.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/index.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/hooks/useLibrary.ts src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/components/LibrarySidebar.tsx src/components/SettingsPanel.tsx --max-warnings=0",
+            "./node_modules/.bin/eslint . --max-warnings=0",
+            "./node_modules/.bin/tsc --noEmit",
+            "./node_modules/.bin/tsx server/tests/sqliteRepository.test.ts",
+            "PATH=/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH ./node_modules/.bin/vite build",
+            "Browser smoke: temp API on 4327 + Vite on 5188; opened sidebar Settings, selected DeepSeek, saved a fake key, confirmed key-set UI and public settings response without raw key"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "shared/types.ts",
+            "server/agents/localLlm.ts",
+            "server/agents/contentClassifier.ts",
+            "server/agents/llmSettings.ts",
+            "server/repositories/types.ts",
+            "server/repository.ts",
+            "server/repositories/jsonRepository.ts",
+            "server/repositories/sqliteRepository.ts",
+            "server/tests/agentLocalLlm.test.ts",
+            "server/index.ts",
+            "src/lib/api.ts",
+            "src/hooks/useLibrary.ts",
+            "src/pages/LibraryPage.tsx",
+            "src/components/ItemDetail.tsx",
+            "src/components/LibrarySidebar.tsx",
+            "src/components/SettingsPanel.tsx",
+            "src/styles.css",
+            "docs/AGENT_LOCAL_LLM.md",
+            "docs/INDEX.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "package.json",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "`agentLocalLlm.test.ts` mocks Ollama `/api/tags` and `/api/generate` plus DeepSeek `/models` and `/chat/completions`; it does not require a local Ollama install, real model weights, or a real DeepSeek API key. The SQLite repository fixture uses an in-memory database.",
+          "notes": "The current shell does not expose `pnpm`, so equivalent direct local binaries were used. Agent classification now persists as `agentClassification` and renders in the detail panel. The sidebar Settings modal now writes local provider configuration without returning raw API keys to the renderer, and switching cloud providers clears the previous provider's saved key unless a replacement key is provided. Browser smoke verified the left-sidebar Settings trigger, DeepSeek defaults, API-key field, saved state, and `apiKeyConfigured`-only public response. `./node_modules/.bin/tsc --noEmit` is green. A direct `./node_modules/.bin/vite build` under the default Codex app Node failed because macOS rejected Rollup's native optional dependency signature; the same build passed under the bundled workspace Node via PATH."
+        }
+      ],
+      "next": "Next slices: add batch classification, classification filters/search affordances, or start the separate embedded on-device model runtime track."
+    },
     {
       "id": "electron-desktop-shell-migration",
       "title": "Replace the previous desktop shell with Electron",
@@ -368,7 +551,7 @@
           "notes": "Root cause: the reported snapshot already contained real `pbs.twimg.com/media` candidates, but the server treated X's default `og:image` as preferred/useful and returned it before checking snapshot candidates. The X adapter now extracts tweet media from `tweetPhoto`/photo regions first, and the shared cover filter rejects the X platform-default og image. The extension extractor and popup preview now collect and rank `srcset`, lazy-loaded, and inline background-image article candidates before capping the list. Re-running the stored snapshot now returns `https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium` with `sourceType=tweet`, `extractor=browser_snapshot`, and `publishedAt=2026-06-03T12:41:56.000Z`."
         }
       ],
-      "next": "Consider extending `PageSnapshot.imageCandidates` to carry dimensions/source kind if future sites need a richer server-side scoring model."
+      "next": "Structured `PageSnapshot.imageCandidates` now carry dimensions/source/context for server-side cover scoring; future work can add manual cover override/remove in the library UI if users need editorial control."
     },
     {
       "id": "library-ui-theme-detail-refresh",

@@ -48,20 +48,30 @@ export function upgradeCdnCoverResolution(input) {
 export function collectCoverCandidatesInPage() {
   const metaContent = (selector) => document.querySelector(selector)?.getAttribute("content") || null;
   const candidates = [];
-  const push = (value, score) => {
+  const push = (value, details) => {
     for (const candidate of expandImageSource(value)) {
       const absolute = absolutize(candidate);
       if (absolute) {
-        candidates.push({ value: absolute, score: score + scoreUrl(absolute), order: candidates.length });
+        candidates.push({
+          url: absolute,
+          score: details.score + scoreUrl(absolute),
+          source: details.source,
+          width: details.width,
+          height: details.height,
+          alt: details.alt,
+          context: details.context,
+          inContentRoot: Boolean(details.inContentRoot),
+          order: candidates.length
+        });
       }
     }
   };
 
-  push(metaContent('meta[property="og:image"]'), 900);
-  push(metaContent('meta[property="og:image:url"]'), 895);
-  push(metaContent('meta[property="og:image:secure_url"]'), 895);
-  push(metaContent('meta[name="twitter:image"]'), 880);
-  push(metaContent('meta[name="twitter:image:src"]'), 880);
+  push(metaContent('meta[property="og:image"]'), metadataDetails("metadata:og_image", 900));
+  push(metaContent('meta[property="og:image:url"]'), metadataDetails("metadata:og_image_url", 895));
+  push(metaContent('meta[property="og:image:secure_url"]'), metadataDetails("metadata:og_image_secure_url", 895));
+  push(metaContent('meta[name="twitter:image"]'), metadataDetails("metadata:twitter_image", 880));
+  push(metaContent('meta[name="twitter:image:src"]'), metadataDetails("metadata:twitter_image_src", 880));
 
   const scripts = document.querySelectorAll('script[type="application/ld+json"]');
   for (const script of scripts) {
@@ -80,25 +90,41 @@ export function collectCoverCandidatesInPage() {
       // Prioritize structured video/audio/article cover signals — same
       // intent as the server-side JSON-LD form picker in jsonLd.ts.
       if (/video|audio|article|news|blogposting|episode/.test(type)) {
-        push(firstJsonLdImageUrl(node.thumbnailUrl), 920);
-        push(firstJsonLdImageUrl(node.image), 910);
+        push(firstJsonLdImageUrl(node.thumbnailUrl), { score: 920, source: `jsonld:${type}_thumbnail`, context: type });
+        push(firstJsonLdImageUrl(node.image), { score: 910, source: `jsonld:${type}_image`, context: type });
       }
     }
   }
 
   for (const entry of pageImageEntries(document.querySelector("article, main, [role='main']") || document.body, 620)) {
-    push(entry.value, entry.score);
+    push(entry.value, entry);
   }
 
   return Array.from(
     candidates
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .reduce((seen, candidate) => {
-        if (!seen.has(candidate.value)) seen.set(candidate.value, candidate);
+        if (!seen.has(candidate.url)) seen.set(candidate.url, candidate);
         return seen;
       }, new Map())
       .values()
-  ).map((candidate) => candidate.value);
+  );
+
+  function metadataDetails(source, score) {
+    return {
+      score,
+      source,
+      width: numericMeta('meta[property="og:image:width"]'),
+      height: numericMeta('meta[property="og:image:height"]')
+    };
+  }
+
+  function numericMeta(selector) {
+    const value = metaContent(selector);
+    if (!value) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
 
   // Mirror of server/sources/jsonLd.ts#firstJsonLdImageUrl. JSON-LD image refs
   // can be a bare URL string, an array of strings, or an ImageObject
@@ -130,6 +156,7 @@ export function collectCoverCandidatesInPage() {
       );
       if (!looksLikeMedia && !hasSrcset && width < 120 && height < 120) return [];
       const score = baseScore + Math.min(220, Math.round((Math.max(width, 1) * Math.max(height, 1)) / 1800)) + elementBonus(element);
+      const context = elementContext(element);
       return [
         element.currentSrc,
         element.src,
@@ -142,10 +169,25 @@ export function collectCoverCandidatesInPage() {
         bestSrcsetUrl(element.srcset || element.getAttribute("srcset") || element.getAttribute("data-srcset"))
       ]
         .filter(Boolean)
-        .map((value) => ({ value, score }));
+        .map((value) => ({
+          value,
+          score,
+          source: "content_image",
+          width,
+          height,
+          alt: cleanText(element.alt || element.getAttribute("aria-label")),
+          context,
+          inContentRoot: true
+        }));
     });
     const backgroundEntries = Array.from(root.querySelectorAll("[style*='background']")).flatMap((element) =>
-      imageUrlsFromCss(element.getAttribute("style")).map((value) => ({ value, score: baseScore - 30 + elementBonus(element) }))
+      imageUrlsFromCss(element.getAttribute("style")).map((value) => ({
+        value,
+        score: baseScore - 30 + elementBonus(element),
+        source: "content_background",
+        context: elementContext(element),
+        inContentRoot: true
+      }))
     );
     return [...imageEntries, ...backgroundEntries];
   }
@@ -190,7 +232,24 @@ export function collectCoverCandidatesInPage() {
     let bonus = 0;
     if (element.closest("[data-testid='tweetPhoto'], a[href*='/photo/']")) bonus += 420;
     if (element.closest("article, main")) bonus += 80;
+    if (/image|photo|cover|hero/i.test(elementContext(element) || "")) bonus += 240;
     return bonus;
+  }
+
+  function elementContext(element) {
+    return cleanText(
+      `${element.alt || ""} ${element.getAttribute("aria-label") || ""} ${element.getAttribute("data-testid") || ""} ${
+        element.className || ""
+      } ${element.id || ""} ${
+        element.closest("[data-testid='tweetPhoto'], a[href*='/photo/'], figure, article, main")?.getAttribute("data-testid") || ""
+      }`
+    );
+  }
+
+  function cleanText(value) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function scoreUrl(value) {

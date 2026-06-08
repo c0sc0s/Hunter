@@ -74,7 +74,12 @@ export function buildQueuedItem(
 ): LibraryItem {
   const normalizedUrl = normalizeUrl(input.url);
   const host = new URL(normalizedUrl).hostname.replace(/^www\./, "");
-  const snapshotText = input.snapshot.selectedText ?? input.snapshot.excerpt ?? input.snapshot.textContent ?? "";
+  const snapshotText =
+    input.snapshot.selectedText ??
+    input.snapshot.textContent ??
+    input.snapshot.contentCandidates?.map((candidate) => candidate.text).find(Boolean) ??
+    input.snapshot.excerpt ??
+    "";
   const sourceType = input.sourceType ?? detectSourceType(normalizedUrl);
   const title = input.title ?? input.snapshot.title ?? host;
   const now = new Date().toISOString();

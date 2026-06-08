@@ -9,7 +9,7 @@
 | 扩展 queue.js（IndexedDB + storage 索引 + 容量保护 + lease）                   | 完成 | `pnpm test:queue`                           | `extension/src/queue.js`, `extension/tests/queue.test.ts`                                 |
 | 扩展 saveActions.js（performSave / flushQueue / tryPost / pingHealth）         | 完成 | `pnpm test:save-actions`                    | `extension/src/saveActions.js`                                                            |
 | 扩展 apiBase.js（4317-4319 探活 + TTL 缓存）                                   | 完成 | `pnpm test:api-base`                        | 自定义 off-list localhost base 会优先于默认端口                                           |
-| 扩展 background.js（alarms / onStartup / tabs.onUpdated / 上下文菜单 / badge） | 完成 | `pnpm golden:extension`                     | 所有保存入口都带 snapshot 并经过 supported-resource gate                                  |
+| 扩展 background.js（alarms / onStartup / tabs.onUpdated / 上下文菜单 / badge） | 完成 | `pnpm golden:extension`                     | 所有保存入口都带 snapshot；supported-resource gate 当前关闭，待算法重做                   |
 | Server 端口范围回退 + stdout 握手                                              | 完成 | `pnpm test:listen`                          | `HUNTER_API_PORT=<port>` 是桌面壳解析的机器可读握手                                       |
 | Server 数据目录抽象（`HUNTER_DATA_DIR`）                                       | 完成 | `pnpm test:data-dir`                        | Electron dev 使用 repo `./data/`，packaged app 使用 OS userData 目录                      |
 | Electron shell（main/preload + sidecar supervisor + IPC API base）             | 完成 | `pnpm check`, manual smoke                  | `electron/main.cjs`, `electron/preload.cjs`, `electron/dev.mjs`                           |
@@ -58,7 +58,7 @@ flowchart LR
 
 信任边界：
 
-- 浏览器扩展到本地 API：HTTP，仅绑定 `127.0.0.1`。扩展通过 `/api/health` 探活。
+- 浏览器扩展到本地 API：HTTP，仅绑定 `127.0.0.1`。扩展通过 `/api/health` 探活，并读取 `owner` / `startedAt` 来区分同机多个 Hunter sidecar；默认自动模式优先 packaged Electron sidecar，其次 dev Electron sidecar，再其次 standalone API。用户明确配置的 API base 仍按手动配置优先。
 - Electron main 到 Node sidecar：父子进程，通过 stdout 单行端口握手。
 - React renderer 到 Electron main：preload 暴露的受控 IPC bridge，renderer 不启用 Node integration。
 
@@ -140,7 +140,7 @@ React 侧只通过 `src/lib/desktopBridge.ts` 访问这个对象：
 - context-menu "Save page"
 - background save-tab pipeline
 
-所有入口先运行 supported-resource gate，再生成 browser snapshot。在线时直接 POST 到本地 API；离线或 API 不可达时入 IndexedDB 队列。flush 由 alarm/startup/tab update/popup 触发，并通过 `chrome.storage.local` lease 降低并发重复 POST。
+所有入口生成 browser snapshot 后直接 POST 到本地 API；supported-resource gate 当前通过 `CONTENT_SUPPORT_GATE_ENABLED=false` 关闭，待算法重做。在线时直接 POST 到本地 API；离线或 API 不可达时入 IndexedDB 队列。flush 由 alarm/startup/tab update/popup 触发，并通过 `chrome.storage.local` lease 降低并发重复 POST。
 
 幂等保障：
 

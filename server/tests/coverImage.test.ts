@@ -84,6 +84,31 @@ const weakHtmlFallsBackToCandidates = await selectCoverImage({
 });
 assert.equal(weakHtmlFallsBackToCandidates, "https://cdn.example.com/media/snapshot-photo.jpg");
 
+const contentImageBeatsGenericMetadata = await selectCoverImage({
+  url: "https://internal.example.com/articles/agent-notes",
+  html: '<html><head><meta property="og:image" content="https://cdn.example.com/static/share.png" /></head></html>',
+  snapshotCandidates: [
+    {
+      url: "https://cdn.example.com/static/share.png",
+      score: 900,
+      source: "metadata:og_image",
+      width: 300,
+      height: 300
+    },
+    {
+      url: "https://cdn.example.com/uploads/article-photo.jpg",
+      score: 780,
+      source: "content_image",
+      width: 960,
+      height: 540,
+      alt: "Agent workflow diagram",
+      context: "article figure image",
+      inContentRoot: true
+    }
+  ]
+});
+assert.equal(contentImageBeatsGenericMetadata, "https://cdn.example.com/uploads/article-photo.jpg");
+
 const xDefaultOgFallsBackToTweetMedia = await selectCoverImage({
   url: "https://x.com/idoubicc/status/2062152804014436508",
   html: '<html><head><meta property="og:image" content="https://abs.twimg.com/rweb/ssr/default/v2/og/image.png" /></head></html>',

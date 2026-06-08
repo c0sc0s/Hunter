@@ -1,4 +1,5 @@
 import type { CreateItemInput, LibraryItem, UpdateItemInput } from "../../shared/types";
+import { collectAgentContentCategories, needsAgentClassification } from "../agents/contentCategories";
 import { getStats, readCaptureEvents, readItems, updateCaptureEvents, updateItems, updateRecognitionJobs } from "../store";
 import { markRecognitionFailedItem, mergeQueuedItem, mergeRecognitionResult, patchItem } from "./itemMerges";
 import { buildPage, filterItems, normalizeLibraryQuery, pageItems } from "./listQuery";
@@ -24,6 +25,15 @@ export function createJsonRepository(): LibraryRepository {
       return items.find((item) => item.id === id);
     },
 
+    async listAgentCategories() {
+      return collectAgentContentCategories(await readItems());
+    },
+
+    async listAgentClassificationCandidates(limit: number) {
+      const items = await readItems();
+      return items.filter(needsAgentClassification).slice(0, limit);
+    },
+
     async upsertQueued(item: LibraryItem, input: CreateItemInput) {
       return updateItems((items) => {
         const index = items.findIndex((candidate) => candidate.canonicalUrl === item.canonicalUrl || candidate.url === input.url);
@@ -44,6 +54,21 @@ export function createJsonRepository(): LibraryRepository {
         if (index < 0) return { items, result: undefined };
 
         const updated = patchItem(items[index], input);
+        items[index] = updated;
+        return { items, result: updated };
+      });
+    },
+
+    async setAgentClassification(id, result) {
+      return updateItems((items) => {
+        const index = items.findIndex((item) => item.id === id);
+        if (index < 0) return { items, result: undefined };
+
+        const updated = {
+          ...items[index],
+          agentClassification: result,
+          updatedAt: new Date().toISOString()
+        };
         items[index] = updated;
         return { items, result: updated };
       });

@@ -153,7 +153,7 @@ try {
   await appPage.getByRole("button", { name: "Reload", exact: true }).click();
   await appPage.getByText(fixtureTitle).first().waitFor();
   await appPage.getByText(fixtureTitle).first().click();
-  await appPage.getByRole("heading", { name: "Overview" }).waitFor();
+  await appPage.getByRole("heading", { name: "Description" }).waitFor();
   await appPage.getByRole("complementary").getByText("loaded Chrome extension can capture").waitFor();
   await appPage.getByRole("link", { name: "Open link" }).first().waitFor();
 
@@ -173,8 +173,8 @@ try {
 
   const unsupportedPopupPage = await context.newPage();
   await unsupportedPopupPage.goto(`chrome-extension://${extensionId}/popup.html?tabId=${unsupportedTabId}`);
-  await unsupportedPopupPage.getByText("Unsupported resource type").waitFor();
-  assert.equal(await unsupportedPopupPage.locator("#saveButton").isVisible(), false, "Unsupported popup should not expose Save");
+  await unsupportedPopupPage.getByRole("button", { name: "Save" }).waitFor();
+  assert.equal(await unsupportedPopupPage.getByText("Unsupported resource type").isVisible(), false, "Support gate is disabled for now");
 
   const unsupportedSaveResponse = (await extensionPage.evaluate(
     async ({ unsupportedFixtureUrl }) => {
@@ -183,20 +183,15 @@ try {
         type: "hunter-save-active-tab",
         tabId: tab?.id,
         tags: ["unsupported-e2e"],
-        note: "this unsupported resource must not be posted"
+        note: "support gate disabled fixture should be posted"
       });
     },
     { unsupportedFixtureUrl }
   )) as ExtensionSaveResponse;
 
-  assert.equal(unsupportedSaveResponse.ok, false, "Unsupported runtime save should fail before posting a snapshot");
-  assert.match(unsupportedSaveResponse.error ?? "", /supported/i);
-  const libraryAfterUnsupported = await fetchJson<LibraryResponse>(`${apiBase}/api/items`);
-  assert.equal(
-    libraryAfterUnsupported.items.some((item) => item.title === unsupportedFixtureTitle),
-    false,
-    "Unsupported resource should not create a library item"
-  );
+  assert.equal(unsupportedSaveResponse.ok, true, unsupportedSaveResponse.error);
+  assert.ok(unsupportedSaveResponse.item, `Gate-disabled save should post a snapshot, got ${JSON.stringify(unsupportedSaveResponse)}`);
+  await waitForApiItem((item) => item.title === unsupportedFixtureTitle);
 
   const popupFixturePage = await context.newPage();
   await popupFixturePage.goto(popupFixtureUrl);
@@ -233,7 +228,7 @@ try {
   await appPage.getByRole("button", { name: "Reload", exact: true }).click();
   await appPage.getByText(popupFixtureTitle).first().waitFor();
   await appPage.getByText(popupFixtureTitle).first().click();
-  await appPage.getByRole("heading", { name: "Overview" }).waitFor();
+  await appPage.getByRole("heading", { name: "Description" }).waitFor();
   await appPage.getByRole("complementary").getByText("visible extension save button").waitFor();
 
   console.log("extension golden journey passed");

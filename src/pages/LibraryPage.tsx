@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { Layers3, PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
-import { IconTooltip } from "@/components/IconTooltip";
 import { ItemDetail } from "@/components/ItemDetail";
 import { LibraryGrid } from "@/components/LibraryGrid";
 import { LibrarySidebar } from "@/components/LibrarySidebar";
@@ -13,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useLibrary } from "@/hooks/useLibrary";
 import { cn } from "@/lib/utils";
 
-const SIDEBAR_WIDTH = 292;
+const SIDEBAR_WIDTH = 264;
 const DETAIL_PANEL_STORAGE_KEY = "hunter-detail-panel-width";
 const DETAIL_PANEL_DEFAULT_WIDTH = 360;
 const DETAIL_PANEL_MIN_WIDTH = 320;
@@ -37,6 +36,7 @@ export function LibraryPage() {
   const resizeShieldRef = useRef<HTMLDivElement | null>(null);
   const detailPanelMaxWidth = getDetailPanelMaxWidth(sidebarCollapsed);
   const layoutStyle = {
+    "--library-sidebar-expanded-width": `${SIDEBAR_WIDTH}px`,
     "--library-sidebar-width": sidebarCollapsed ? "0px" : `${SIDEBAR_WIDTH}px`,
     "--library-detail-width": `${detailPanelWidth}px`
   } as CSSProperties;
@@ -237,6 +237,7 @@ export function LibraryPage() {
   return (
     <TooltipProvider>
       <main className="dark relative min-h-screen bg-background text-foreground lg:h-screen lg:min-h-0 lg:overflow-hidden">
+        {isDesktopShell() ? <DesktopTitlebarDragLayer /> : null}
         <DesktopWindowControlSlot sidebarCollapsed={sidebarCollapsed} onSidebarCollapsedChange={setSidebarCollapsed} />
 
         <div
@@ -257,17 +258,21 @@ export function LibraryPage() {
           <section
             className={cn(
               "hunter-panel-top min-w-0 border-r border-border/60 bg-muted/30 p-4 sm:p-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden",
-              sidebarCollapsed ? "lg:pt-11" : "lg:border-l"
+              !sidebarCollapsed && "lg:border-l"
             )}
           >
             <LibraryToolbar
               filter={library.filter}
-              sourceFilter={library.sourceFilter}
               stats={library.stats}
               page={library.page}
               visibleCount={library.items.length}
               query={library.query}
+              selectedAgentCategoryId={library.agentCategoryId}
+              agentClassifying={library.agentClassifying}
+              agentClassifyError={library.agentClassifyError}
               onQueryChange={library.setQuery}
+              onAgentCategoryChange={library.setAgentCategoryId}
+              onClassifyIncremental={() => void library.classifyIncremental()}
               onReload={library.reload}
             />
 
@@ -294,7 +299,7 @@ export function LibraryPage() {
 
           <aside
             aria-label="Item detail"
-            className="hunter-panel-top relative hidden min-w-0 overflow-hidden border-l border-border/60 bg-background lg:block lg:h-full"
+            className="hunter-detail-panel-surface relative hidden min-w-0 overflow-hidden border-l border-border/35 lg:block lg:h-full"
           >
             <div
               ref={detailResizerRef}
@@ -322,13 +327,14 @@ export function LibraryPage() {
                 )}
               />
             </div>
-            <ScrollArea className="h-screen lg:h-full">
+            <ScrollArea className="h-screen min-w-0 max-w-full overflow-hidden lg:h-full">
               {library.selected ? (
                 <ItemDetail
                   key={library.selected.id}
                   item={library.selected}
                   onDelete={() => void library.deleteItem(library.selected!.id)}
                   onPatch={(patch) => void library.patchItem(library.selected!.id, patch)}
+                  onClassify={() => library.classifyItem(library.selected!.id)}
                 />
               ) : (
                 <DetailEmptyState hasItems={library.items.length > 0} />
@@ -361,6 +367,7 @@ export function LibraryPage() {
                 item={library.selected}
                 onDelete={() => void library.deleteItem(library.selected!.id)}
                 onPatch={(patch) => void library.patchItem(library.selected!.id, patch)}
+                onClassify={() => library.classifyItem(library.selected!.id)}
               />
             ) : null}
           </SheetContent>
@@ -377,7 +384,17 @@ export function LibraryPage() {
 // axis. Anything taller leaves visible dead space above the sidebar nav and
 // also makes the drag region swallow clicks on the first nav row.
 const TITLE_BAR_SLOT_HEIGHT = 44;
-const COLLAPSE_BUTTON_LEFT = 104;
+const COLLAPSE_BUTTON_LEFT = 92;
+
+function DesktopTitlebarDragLayer() {
+  return (
+    <div
+      aria-hidden="true"
+      className="hunter-window-drag-region fixed inset-x-0 top-0 z-30 hidden lg:block"
+      style={{ height: `${TITLE_BAR_SLOT_HEIGHT}px` }}
+    />
+  );
+}
 
 function DesktopWindowControlSlot({
   sidebarCollapsed,
@@ -388,25 +405,22 @@ function DesktopWindowControlSlot({
 }) {
   return (
     <div
-      className="pointer-events-none fixed left-0 top-0 z-40 hidden lg:flex lg:items-center lg:transition-[width] lg:duration-[var(--motion-slow)] lg:ease-[var(--ease-out-soft)]"
+      className="pointer-events-none fixed left-0 top-[1px] z-40 hidden lg:flex lg:items-center lg:transition-[width] lg:duration-[var(--motion-slow)] lg:ease-[var(--ease-out-soft)]"
       style={{ width: sidebarCollapsed ? "188px" : `${SIDEBAR_WIDTH}px`, height: `${TITLE_BAR_SLOT_HEIGHT}px` }}
     >
-      <div aria-hidden="true" className="hunter-window-drag-region pointer-events-auto absolute inset-0" />
-      <IconTooltip label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
-        <Button
-          className="pointer-events-auto relative text-muted-foreground hover:bg-muted/45 hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground dark:aria-expanded:bg-transparent"
-          style={{ marginLeft: `${COLLAPSE_BUTTON_LEFT}px` }}
-          variant="ghost"
-          size="icon"
-          aria-controls="library-sidebar"
-          aria-expanded={!sidebarCollapsed}
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          type="button"
-          onClick={() => onSidebarCollapsedChange(!sidebarCollapsed)}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-        </Button>
-      </IconTooltip>
+      <Button
+        className="hunter-window-no-drag pointer-events-auto relative text-muted-foreground hover:bg-muted/45 hover:text-foreground aria-expanded:bg-transparent aria-expanded:text-muted-foreground dark:aria-expanded:bg-transparent"
+        style={{ marginLeft: `${COLLAPSE_BUTTON_LEFT}px` }}
+        variant="ghost"
+        size="icon"
+        aria-controls="library-sidebar"
+        aria-expanded={!sidebarCollapsed}
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        type="button"
+        onClick={() => onSidebarCollapsedChange(!sidebarCollapsed)}
+      >
+        {sidebarCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+      </Button>
     </div>
   );
 }
@@ -437,6 +451,10 @@ function clampDetailPanelWidth(width: number, sidebarCollapsed: boolean): number
 
 function clampDetailPanelWidthForMax(width: number, maxWidth: number): number {
   return Math.min(Math.max(Math.round(width), DETAIL_PANEL_MIN_WIDTH), maxWidth);
+}
+
+function isDesktopShell(): boolean {
+  return typeof window !== "undefined" && Boolean(window.hunterDesktop);
 }
 
 function useMediaQuery(query: string): boolean {

@@ -30,6 +30,39 @@ try {
     "Validation issues should mention snapshot"
   );
 
+  const structuredCandidateResponse = await fetch(`${baseUrl}/api/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: "https://example.com/structured-cover",
+      snapshot: {
+        url: "https://example.com/structured-cover",
+        title: "Structured cover",
+        imageCandidates: [
+          {
+            url: "https://cdn.example.com/static/share.png",
+            score: 900,
+            source: "metadata:og_image",
+            width: 300,
+            height: 300
+          },
+          {
+            url: "https://cdn.example.com/uploads/article-photo.jpg",
+            score: 780,
+            source: "content_image",
+            width: 960,
+            height: 540,
+            context: "article figure image",
+            inContentRoot: true
+          }
+        ]
+      }
+    })
+  });
+  assert.equal(structuredCandidateResponse.status, 201, "structured image candidates should pass API validation");
+  const structuredCandidateItem = (await structuredCandidateResponse.json()) as { coverImage?: string };
+  assert.equal(structuredCandidateItem.coverImage, "https://cdn.example.com/uploads/article-photo.jpg");
+
   console.log("snapshot-required api fixture passed");
 } finally {
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));

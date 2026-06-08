@@ -80,11 +80,17 @@ function setupDocument(html: string) {
   };
 }
 
+function candidateUrls(candidates: Array<string | { url: string }>): string[] {
+  return candidates.map((candidate) => (typeof candidate === "string" ? candidate : candidate.url));
+}
+
 test("collectCoverCandidatesInPage prefers og:image when present", () => {
   const restore = setupDocument('<html><head><meta property="og:image" content="https://example.com/og.jpg" /></head></html>');
   try {
     const candidates = collectCoverCandidatesInPage();
-    assert.equal(candidates[0], "https://example.com/og.jpg");
+    assert.equal(candidateUrls(candidates)[0], "https://example.com/og.jpg");
+    const first = candidates[0];
+    assert.equal(typeof first === "string" ? undefined : first?.source, "metadata:og_image");
   } finally {
     restore();
   }
@@ -106,7 +112,7 @@ test("collectCoverCandidatesInPage surfaces VideoObject thumbnailUrl ahead of ge
     </html>
   `);
   try {
-    const candidates = collectCoverCandidatesInPage();
+    const candidates = candidateUrls(collectCoverCandidatesInPage());
     assert.ok(candidates.includes("https://i0.hdslb.com/bfs/archive/video-cover.jpg@189w_107h.webp"));
     // og:image still shows up so callers have a deterministic fallback.
     assert.ok(candidates.includes("https://i0.hdslb.com/bfs/archive/site-default.jpg"));
@@ -141,7 +147,7 @@ test("collectCoverCandidatesInPage surfaces article image candidates", () => {
     </html>
   `);
   try {
-    const candidates = collectCoverCandidatesInPage();
+    const candidates = candidateUrls(collectCoverCandidatesInPage());
     assert.ok(candidates.includes("https://example.com/large.jpg"));
     assert.ok(candidates.includes("https://example.com/lazy.jpg"));
     assert.ok(candidates.includes("https://example.com/background.webp"));
@@ -171,7 +177,7 @@ test("collectCoverCandidatesInPage ranks X tweet media ahead of X default og ima
     </html>
   `);
   try {
-    const candidates = collectCoverCandidatesInPage();
+    const candidates = candidateUrls(collectCoverCandidatesInPage());
     assert.equal(candidates[0], "https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium");
   } finally {
     restore();
@@ -188,7 +194,7 @@ test("collectCoverCandidatesInPage survives malformed JSON-LD", () => {
     </html>
   `);
   try {
-    const candidates = collectCoverCandidatesInPage();
+    const candidates = candidateUrls(collectCoverCandidatesInPage());
     assert.equal(candidates[0], "https://example.com/og.jpg");
   } finally {
     restore();

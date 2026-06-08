@@ -13,6 +13,8 @@ const dom = new JSDOM(
       <meta property="og:title" content="Focused Capture" />
       <meta property="og:description" content="A page with a huge shell and a useful article." />
       <meta property="og:image" content="/og-cover.jpg" />
+      <link rel="icon" sizes="16x16" href="/favicon-16.png" />
+      <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     </head>
     <body>
       <nav>${noisyNavigation}</nav>
@@ -44,9 +46,22 @@ assert.match(snapshot.html, /Browser snapshot capture should prefer/);
 assert.doesNotMatch(snapshot.html, /Navigation item 399/);
 assert.match(snapshot.textContent, /focused content root/);
 assert.doesNotMatch(snapshot.textContent, /Navigation item 399/);
+assert.equal(snapshot.favicon, "https://example.com/apple-touch-icon.png");
 assert.equal(
-  JSON.stringify(snapshot.imageCandidates.slice(0, 2)),
+  JSON.stringify(candidateUrls(snapshot).slice(0, 2)),
   JSON.stringify(["https://example.com/og-cover.jpg", "https://example.com/article-cover.jpg"])
+);
+assert.equal(typeof snapshot.imageCandidates[0], "object");
+assert.equal(typeof snapshot.imageCandidates[1], "object");
+const secondImageCandidate = snapshot.imageCandidates[1];
+assert.notEqual(typeof secondImageCandidate, "string");
+assert.equal(typeof secondImageCandidate === "string" ? undefined : secondImageCandidate?.source, "content_image");
+assert.equal(typeof secondImageCandidate === "string" ? undefined : secondImageCandidate?.inContentRoot, true);
+assert.equal(snapshot.contentCandidates?.[0]?.kind, "focused_root");
+assert.match(snapshot.contentCandidates?.[0]?.text ?? "", /focused content root/);
+assert.ok(
+  snapshot.contentCandidates?.some((candidate) => candidate.kind === "body"),
+  "body text fallback candidate is preserved"
 );
 
 const xMediaDom = new JSDOM(
@@ -81,8 +96,8 @@ const xMediaSnapshot = (
   xMediaDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }
 ).__hunterExtractPageSnapshot();
 
-assert.equal(xMediaSnapshot.imageCandidates[0], "https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium");
-assert.ok(xMediaSnapshot.imageCandidates.includes("https://abs.twimg.com/rweb/ssr/default/v2/og/image.png"));
+assert.equal(candidateUrls(xMediaSnapshot)[0], "https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium");
+assert.ok(candidateUrls(xMediaSnapshot).includes("https://abs.twimg.com/rweb/ssr/default/v2/og/image.png"));
 
 const responsiveImageDom = new JSDOM(
   `<!doctype html>
@@ -108,9 +123,9 @@ const responsiveSnapshot = (
   responsiveImageDom.window as unknown as { __hunterExtractPageSnapshot: () => ExtensionSnapshot }
 ).__hunterExtractPageSnapshot();
 
-assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/hero-1280.jpg"));
-assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/lazy-hero.jpg"));
-assert.ok(responsiveSnapshot.imageCandidates.includes("https://example.com/background-hero.webp"));
+assert.ok(candidateUrls(responsiveSnapshot).includes("https://example.com/hero-1280.jpg"));
+assert.ok(candidateUrls(responsiveSnapshot).includes("https://example.com/lazy-hero.jpg"));
+assert.ok(candidateUrls(responsiveSnapshot).includes("https://example.com/background-hero.webp"));
 
 const hugeImages = Array.from({ length: 40 }, (_, index) => `<img src="/image-${index}.jpg" width="320" />`).join("");
 const hugeDom = new JSDOM(
@@ -138,6 +153,8 @@ assert.ok(hugeSnapshot.title && hugeSnapshot.title.length <= 500);
 assert.ok(hugeSnapshot.html.length <= 180000);
 assert.ok(hugeSnapshot.textContent && hugeSnapshot.textContent.length <= 120000);
 assert.equal(hugeSnapshot.imageCandidates.length, 16);
+assert.ok((hugeSnapshot.contentCandidates?.length ?? 0) <= 4);
+assert.ok((hugeSnapshot.contentCandidates?.[0]?.text?.length ?? 0) <= 60000);
 
 // JSON-LD can legitimately live in <body> (e.g. B站 / Bilibili injects
 // VideoObject ld+json near the bottom of the body, well past the 180KB
@@ -178,11 +195,37 @@ assert.match(headSlice, /application\/ld\+json/, "JSON-LD must be lifted into th
 
 console.log("extension extractor fixtures passed");
 
+function candidateUrls(snapshot: ExtensionSnapshot): string[] {
+  return snapshot.imageCandidates.map((candidate) => (typeof candidate === "string" ? candidate : candidate.url));
+}
+
+type ExtensionImageCandidate =
+  | string
+  | {
+      url: string;
+      score?: number;
+      source?: string;
+      width?: number;
+      height?: number;
+      alt?: string;
+      context?: string;
+      inContentRoot?: boolean;
+      order?: number;
+    };
+
 type ExtensionSnapshot = {
   url: string;
   canonicalUrl?: string;
   title?: string;
+  favicon?: string;
   html: string;
   textContent?: string;
-  imageCandidates: string[];
+  imageCandidates: ExtensionImageCandidate[];
+  contentCandidates?: Array<{
+    kind: string;
+    text?: string;
+    html?: string;
+    selector?: string;
+    score?: number;
+  }>;
 };

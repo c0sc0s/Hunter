@@ -12,12 +12,24 @@ export const libraryRepository: LibraryRepository = {
     return (await resolveRepository()).findById(id);
   },
 
+  async listAgentCategories() {
+    return (await resolveRepository()).listAgentCategories();
+  },
+
+  async listAgentClassificationCandidates(limit) {
+    return (await resolveRepository()).listAgentClassificationCandidates(limit);
+  },
+
   async upsertQueued(item, input) {
     return (await resolveRepository()).upsertQueued(item, input);
   },
 
   async patch(id, input) {
     return (await resolveRepository()).patch(id, input);
+  },
+
+  async setAgentClassification(id, result) {
+    return (await resolveRepository()).setAgentClassification(id, result);
   },
 
   async delete(id) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -61,7 +61,7 @@ function createWindow() {
     title: "Hunter",
     backgroundColor: "#070809",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 24, y: 16 },
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -74,10 +74,55 @@ function createWindow() {
     mainWindow = null;
   });
 
+  const rendererUrl = process.env.HUNTER_ELECTRON_DEV_URL ?? "http://127.0.0.1:5173";
+  registerExternalLinkHandlers(mainWindow, isDev ? rendererUrl : null);
+
   if (isDev) {
-    void mainWindow.loadURL(process.env.HUNTER_ELECTRON_DEV_URL ?? "http://127.0.0.1:5173");
+    void mainWindow.loadURL(rendererUrl);
   } else {
     void mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+  }
+}
+
+function registerExternalLinkHandlers(window, appUrl) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openExternalLink(url);
+    return { action: "deny" };
+  });
+
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isAllowedAppNavigation(url, appUrl)) return;
+
+    openExternalLink(url);
+    event.preventDefault();
+  });
+}
+
+function openExternalLink(url) {
+  if (!isHttpUrl(url)) return false;
+
+  void shell.openExternal(url).catch((error) => {
+    console.error(`[hunter] failed to open external link ${url}: ${error.message}`);
+  });
+  return true;
+}
+
+function isAllowedAppNavigation(url, appUrl) {
+  if (!appUrl) return false;
+
+  try {
+    return new URL(url).origin === new URL(appUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
+function isHttpUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
@@ -100,6 +145,7 @@ function startSidecar() {
       env: {
         ...process.env,
         ELECTRON_RUN_AS_NODE: "1",
+        HUNTER_API_OWNER: isDev ? "electron-dev" : "electron-packaged",
         HUNTER_PORT_RANGE: PORT_RANGE,
         HUNTER_DATA_DIR: dataDir,
         HUNTER_REPOSITORY: "sqlite"

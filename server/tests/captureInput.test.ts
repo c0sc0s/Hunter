@@ -17,7 +17,28 @@ const oversizedInput = {
     excerpt: "excerpt ".repeat(2_000),
     siteName: "Example Workspace",
     favicon: "https://example.com/favicon.ico",
-    imageCandidates: Array.from({ length: 40 }, (_, index) => `https://example.com/image-${index}.jpg`),
+    imageCandidates: Array.from({ length: 40 }, (_, index) =>
+      index === 0
+        ? {
+            url: `https://example.com/image-${index}.jpg`,
+            score: 780,
+            source: "content_image",
+            width: 960,
+            height: 540,
+            alt: "A".repeat(captureInputLimits.imageCandidateText + 20),
+            context: "article figure image",
+            inContentRoot: true,
+            order: 0
+          }
+        : `https://example.com/image-${index}.jpg`
+    ),
+    contentCandidates: Array.from({ length: 8 }, (_, index) => ({
+      kind: index === 0 ? "focused_root" : "content_root",
+      text: "candidate text ".repeat(10_000),
+      html: `<article>${"candidate html ".repeat(20_000)}</article>`,
+      selector: `article.${"x".repeat(400)}`,
+      score: 400 + index
+    })),
     publishedAt: "2026-06-02T00:00:00.000Z"
   }
 } satisfies CreateItemInput;
@@ -32,6 +53,15 @@ assert.equal(stored.snapshot?.textContent?.length, captureInputLimits.snapshotTe
 assert.equal(stored.snapshot?.selectedText?.length, captureInputLimits.selectedText);
 assert.equal(stored.snapshot?.excerpt?.length, captureInputLimits.excerpt);
 assert.equal(stored.snapshot?.imageCandidates?.length, captureInputLimits.imageCandidates);
+const storedFirstImage = stored.snapshot?.imageCandidates?.[0];
+assert.equal(typeof storedFirstImage, "object");
+assert.equal(typeof storedFirstImage === "string" ? undefined : storedFirstImage?.url, "https://example.com/image-0.jpg");
+assert.equal(typeof storedFirstImage === "string" ? undefined : storedFirstImage?.source, "content_image");
+assert.equal(typeof storedFirstImage === "string" ? undefined : storedFirstImage?.alt?.length, captureInputLimits.imageCandidateText);
+assert.equal(stored.snapshot?.contentCandidates?.length, captureInputLimits.contentCandidates);
+assert.equal(stored.snapshot?.contentCandidates?.[0]?.text?.length, captureInputLimits.contentCandidateText);
+assert.equal(stored.snapshot?.contentCandidates?.[0]?.html?.length, captureInputLimits.contentCandidateHtml);
+assert.equal(stored.snapshot?.contentCandidates?.[0]?.selector?.length, captureInputLimits.contentCandidateSelector);
 assert.equal(stored.snapshot?.canonicalUrl, "https://example.com/private-doc?view=clean");
 
 const refreshInput = toRefreshInput({

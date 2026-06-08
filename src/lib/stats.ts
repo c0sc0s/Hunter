@@ -30,10 +30,20 @@ export function updateStatsForDelete(stats: LibraryStats, removed: PublicLibrary
     read: stats.read - (removed.status === "read" ? 1 : 0),
     archived: stats.archived - (removed.status === "archived" ? 1 : 0),
     favorite: stats.favorite - (removed.favorite ? 1 : 0),
-    sources
+    sources,
+    agentCategories: decrementAgentCategory(stats.agentCategories, removed)
   };
 }
 
 function statusDelta(status: PublicLibraryItem["status"], previous: PublicLibraryItem, next: PublicLibraryItem): number {
   return (next.status === status ? 1 : 0) - (previous.status === status ? 1 : 0);
+}
+
+function decrementAgentCategory(stats: LibraryStats["agentCategories"], removed: PublicLibraryItem): LibraryStats["agentCategories"] {
+  const categoryId = removed.agentClassification?.classification.contentCategory?.id;
+  if (!categoryId) return stats;
+
+  return stats
+    .map((category) => (category.id === categoryId ? { ...category, count: Math.max(0, category.count - 1) } : category))
+    .filter((category) => category.count > 0);
 }

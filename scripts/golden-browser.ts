@@ -75,7 +75,7 @@ try {
     await page.getByRole("button", { name: "Reload", exact: true }).click();
     await page.getByText("Browser Golden Snapshot").first().waitFor();
     await page.getByText("Browser Golden Snapshot").first().click();
-    await page.getByRole("heading", { name: "Overview" }).waitFor();
+    await page.getByRole("heading", { name: "Description" }).waitFor();
     await page.getByRole("complementary").getByText("Browser golden paragraph 1").waitFor();
     await page.getByRole("link", { name: "Open link" }).first().waitFor();
 

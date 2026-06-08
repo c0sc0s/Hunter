@@ -26,7 +26,17 @@
  * @property {string} [excerpt]
  * @property {string} [siteName]
  * @property {string} [favicon]
- * @property {string[]} [imageCandidates]
+ * @property {Array<string | {
+ *   url: string,
+ *   score?: number,
+ *   source?: string,
+ *   width?: number,
+ *   height?: number,
+ *   alt?: string,
+ *   context?: string,
+ *   inContentRoot?: boolean,
+ *   order?: number
+ * }>} [imageCandidates]
  * @property {string} [publishedAt]
  */
 

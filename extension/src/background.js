@@ -5,7 +5,7 @@
  */
 
 import { resolveApiBase } from "./apiBase.js";
-import { detectSupportedResourceInPage } from "./contentSupport.js";
+import { CONTENT_SUPPORT_GATE_ENABLED, detectSupportedResourceInPage } from "./contentSupport.js";
 import { queue } from "./queue.js";
 import { flushQueue, performSave } from "./saveActions.js";
 
@@ -23,14 +23,6 @@ const UNSUPPORTED_RESOURCE_MESSAGE = "Current resource is not a supported articl
 const WEB_ORIGIN_HINTS = ["127.0.0.1:5173", "127.0.0.1:4317", "localhost:5173", "localhost:4317"];
 
 chrome.runtime.onInstalled.addListener(() => {
-  // Only seed the default API base when no user value exists; never overwrite
-  // a configured apiBase on update.
-  void (async () => {
-    const stored = await chrome.storage.local.get({ apiBase: undefined });
-    if (typeof stored.apiBase !== "string" || stored.apiBase.trim().length === 0) {
-      await chrome.storage.local.set({ apiBase: DEFAULT_API_BASE });
-    }
-  })();
   chrome.contextMenus.create({
     id: "hunter-save-page",
     title: "Save page to Hunter",
@@ -76,12 +68,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function getApiBase() {
-  const { apiBase } = await chrome.storage.local.get({ apiBase: DEFAULT_API_BASE });
-  const configured = typeof apiBase === "string" && apiBase.trim() ? apiBase : DEFAULT_API_BASE;
-  // resolveApiBase probes 4317→4319 when the configured base is localhost so
-  // a desktop sidecar that landed on 4318/4319 still receives saves. For
-  // non-localhost configs (user pointed at a remote server) it is a no-op.
-  return resolveApiBase(configured);
+  const { apiBase, apiBaseMode } = await chrome.storage.local.get(["apiBase", "apiBaseMode"]);
+  const configured = typeof apiBase === "string" && apiBase.trim() ? apiBase.trim() : DEFAULT_API_BASE;
+  const manuallyConfigured = apiBaseMode === "manual" || configured !== DEFAULT_API_BASE;
+  // resolveApiBase ranks healthy local sidecars in automatic mode so a desktop
+  // app that landed on 4318/4319 still receives saves even if another Hunter
+  // API is alive on 4317. Manual non-default configs stay fixed.
+  return resolveApiBase(configured, { preferConfigured: manuallyConfigured });
 }
 
 async function handleContextSave(info, tab) {
@@ -89,10 +82,12 @@ async function handleContextSave(info, tab) {
 
   setTransientBadge("...", BADGE_INFO);
   try {
-    const support = await detectTabResourceSupport(tab.id);
-    if (!support.supported) {
-      await showUnsupportedResourceBubble();
-      return;
+    if (CONTENT_SUPPORT_GATE_ENABLED) {
+      const support = await detectTabResourceSupport(tab.id);
+      if (!support.supported) {
+        await showUnsupportedResourceBubble();
+        return;
+      }
     }
     const snapshot = await extractSnapshot(tab.id);
     const apiBase = await getApiBase();
@@ -128,6 +123,8 @@ async function saveActiveTab(message) {
 }
 
 async function assertSupportedTab(tabId) {
+  if (!CONTENT_SUPPORT_GATE_ENABLED) return;
+
   const support = await detectTabResourceSupport(tabId);
   if (support.supported) return;
   await showUnsupportedResourceBubble();

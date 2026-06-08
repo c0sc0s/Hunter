@@ -2,6 +2,8 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
+  AgentClassificationResult,
+  AgentContentCategorySummary,
   CaptureEvent,
   CreateItemInput,
   LibraryItem,
@@ -11,6 +13,7 @@ import type {
   UpdateItemInput
 } from "../../shared/types";
 import { resolveDataDir } from "../dataDir";
+import { collectAgentContentCategories, needsAgentClassification } from "../agents/contentCategories";
 import { normalizeRecognitionTiming } from "../recognitionTiming";
 import { readItems } from "../store";
 import { markRecognitionFailedItem, mergeQueuedItem, mergeRecognitionResult, patchItem } from "./itemMerges";
@@ -56,6 +59,7 @@ type ItemRow = {
   recognition_duration_ms: number | null;
   recognition_timing_json: string | null;
   content_hash: string | null;
+  agent_classification_json: string | null;
   capture_input_json: string | null;
 };
 
@@ -119,12 +123,21 @@ export class SqliteRepository implements LibraryRepository {
 
   async list(query?: LibraryQuery) {
     const normalizedQuery = normalizeLibraryQuery(query);
-    const where = buildWhereClause(normalizedQuery);
-    const total = (this.db.prepare(`select count(*) as count from saved_items ${where.sql}`).get(...where.params) as { count: number })
-      .count;
+    const search = buildSearchQuery(normalizedQuery.q);
+    const from = buildListFrom(search);
+    const where = buildWhereClause(normalizedQuery, search);
+    const total = (
+      this.db
+        .prepare(`${from.withSql} select count(*) as count from saved_items ${from.joinSql} ${where.sql}`)
+        .get(...from.params, ...where.params) as {
+        count: number;
+      }
+    ).count;
     const rows = this.db
-      .prepare(`select * from saved_items ${where.sql} order by saved_at desc limit ? offset ?`)
-      .all(...where.params, normalizedQuery.limit, normalizedQuery.offset) as ItemRow[];
+      .prepare(
+        `${from.withSql} select saved_items.* from saved_items ${from.joinSql} ${where.sql} ${buildOrderBy(search)} limit ? offset ?`
+      )
+      .all(...from.params, ...where.params, normalizedQuery.limit, normalizedQuery.offset) as ItemRow[];
 
     return {
       items: rows.map(rowToItem),
@@ -136,6 +149,20 @@ export class SqliteRepository implements LibraryRepository {
   async findById(id: string) {
     const row = this.db.prepare("select * from saved_items where id = ?").get(id) as ItemRow | undefined;
     return row ? rowToItem(row) : undefined;
+  }
+
+  async listAgentCategories() {
+    return this.getAgentCategories();
+  }
+
+  async listAgentClassificationCandidates(limit: number) {
+    const rows = this.db
+      .prepare("select * from saved_items where enrichment_state in ('ready', 'partial') order by saved_at desc")
+      .all() as ItemRow[];
+    return rows
+      .map(rowToItem)
+      .filter(needsAgentClassification)
+      .slice(0, Math.max(0, Math.trunc(limit)));
   }
 
   async upsertQueued(item: LibraryItem, input: CreateItemInput) {
@@ -153,6 +180,21 @@ export class SqliteRepository implements LibraryRepository {
       if (!previous) return undefined;
 
       const updated = patchItem(previous, input);
+      this.putItem(updated);
+      return updated;
+    });
+  }
+
+  async setAgentClassification(id: string, result: AgentClassificationResult) {
+    return this.transaction(() => {
+      const previous = this.findItemById(id);
+      if (!previous) return undefined;
+
+      const updated = {
+        ...previous,
+        agentClassification: result,
+        updatedAt: new Date().toISOString()
+      };
       this.putItem(updated);
       return updated;
     });
@@ -302,6 +344,7 @@ export class SqliteRepository implements LibraryRepository {
         recognition_duration_ms integer,
         recognition_timing_json text,
         content_hash text,
+        agent_classification_json text,
         capture_input_json text
       );
 
@@ -310,16 +353,6 @@ export class SqliteRepository implements LibraryRepository {
       create index if not exists saved_items_source_updated_idx on saved_items (source_type, updated_at desc);
       create index if not exists saved_items_favorite_updated_idx on saved_items (favorite, updated_at desc);
       create index if not exists saved_items_content_hash_idx on saved_items (content_hash);
-
-      create virtual table if not exists saved_items_fts using fts5(
-        item_id unindexed,
-        title,
-        summary,
-        excerpt,
-        readable_text,
-        note,
-        tags
-      );
 
       create table if not exists recognition_jobs (
         id text primary key,
@@ -355,6 +388,7 @@ export class SqliteRepository implements LibraryRepository {
       create index if not exists capture_events_created_idx on capture_events (created_at desc);
       create index if not exists capture_events_item_idx on capture_events (item_id, created_at desc);
     `);
+    this.createFtsTable();
   }
 
   private migrateLegacySchema(): void {
@@ -362,6 +396,9 @@ export class SqliteRepository implements LibraryRepository {
     if (itemColumns.has("required_connector")) this.dropColumn("saved_items", "required_connector");
     if (itemColumns.has("capture_method")) this.dropColumn("saved_items", "capture_method");
     if (itemColumns.has("source_access")) this.dropColumn("saved_items", "source_access");
+    if (!itemColumns.has("agent_classification_json")) {
+      this.db.exec("alter table saved_items add column agent_classification_json text");
+    }
 
     const captureEventColumns = this.columnNames("capture_events");
     if (captureEventColumns.has("capture_method")) this.dropColumn("capture_events", "capture_method");
@@ -371,6 +408,56 @@ export class SqliteRepository implements LibraryRepository {
 
     this.db.exec("drop table if exists connector_credentials");
     this.db.exec("drop table if exists connectors");
+    this.migrateFtsSchema();
+  }
+
+  private createFtsTable(): void {
+    this.db.exec(`
+      create virtual table if not exists saved_items_fts using fts5(
+        item_id unindexed,
+        title,
+        summary,
+        excerpt,
+        readable_text,
+        source_name,
+        author,
+        url,
+        canonical_url,
+        note,
+        tags
+      );
+    `);
+  }
+
+  private migrateFtsSchema(): void {
+    const expectedColumns = new Set([
+      "item_id",
+      "title",
+      "summary",
+      "excerpt",
+      "readable_text",
+      "source_name",
+      "author",
+      "url",
+      "canonical_url",
+      "note",
+      "tags"
+    ]);
+    const columns = this.columnNames("saved_items_fts");
+    if ([...expectedColumns].every((column) => columns.has(column))) {
+      return;
+    }
+
+    this.db.exec("drop table if exists saved_items_fts");
+    this.createFtsTable();
+    this.rebuildFtsIndex();
+  }
+
+  private rebuildFtsIndex(): void {
+    const rows = this.db.prepare("select * from saved_items").all() as ItemRow[];
+    for (const row of rows) {
+      this.replaceFts(rowToItem(row));
+    }
   }
 
   private columnNames(table: string): Set<string> {
@@ -419,8 +506,20 @@ export class SqliteRepository implements LibraryRepository {
       read: count("where status = 'read'"),
       archived: count("where status = 'archived'"),
       favorite: count("where favorite = 1"),
-      sources
+      sources,
+      agentCategories: this.getAgentCategories()
     };
+  }
+
+  private getAgentCategories(): AgentContentCategorySummary[] {
+    const rows = this.db
+      .prepare("select agent_classification_json from saved_items where agent_classification_json is not null")
+      .all() as Array<{
+      agent_classification_json: string | null;
+    }>;
+    return collectAgentContentCategories(
+      rows.map((row) => ({ agentClassification: parseAgentClassification(row.agent_classification_json) }))
+    );
   }
 
   private putItem(item: LibraryItem): void {
@@ -461,8 +560,9 @@ export class SqliteRepository implements LibraryRepository {
           recognition_duration_ms,
           recognition_timing_json,
           content_hash,
+          agent_classification_json,
           capture_input_json
-        ) values (${Array.from({ length: 34 }, () => "?").join(",")})
+        ) values (${Array.from({ length: 35 }, () => "?").join(",")})
         on conflict(id) do update set
           url = excluded.url,
           canonical_url = excluded.canonical_url,
@@ -496,6 +596,7 @@ export class SqliteRepository implements LibraryRepository {
           recognition_duration_ms = excluded.recognition_duration_ms,
           recognition_timing_json = excluded.recognition_timing_json,
           content_hash = excluded.content_hash,
+          agent_classification_json = excluded.agent_classification_json,
           capture_input_json = excluded.capture_input_json
         `
       )
@@ -515,12 +616,28 @@ export class SqliteRepository implements LibraryRepository {
           summary,
           excerpt,
           readable_text,
+          source_name,
+          author,
+          url,
+          canonical_url,
           note,
           tags
-        ) values (?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
-      .run(item.id, item.title, item.summary, item.excerpt, item.readableText ?? "", item.note ?? "", item.tags.join(" "));
+      .run(
+        item.id,
+        item.title,
+        item.summary,
+        item.excerpt,
+        item.readableText ?? "",
+        item.sourceName,
+        item.author ?? "",
+        item.url,
+        item.canonicalUrl,
+        item.note ?? "",
+        item.tags.join(" ")
+      );
   }
 
   private putRecognitionJob(job: RecognitionJob): void {
@@ -651,6 +768,7 @@ function itemToParams(item: LibraryItem): Array<string | number | null> {
     item.recognitionDurationMs ?? null,
     item.recognitionTiming ? JSON.stringify(item.recognitionTiming) : null,
     item.contentHash ?? null,
+    item.agentClassification ? JSON.stringify(item.agentClassification) : null,
     item.captureInput ? JSON.stringify(item.captureInput) : null
   ];
 }
@@ -690,8 +808,18 @@ function rowToItem(row: ItemRow): LibraryItem {
     recognitionDurationMs: optionalNumber(row.recognition_duration_ms),
     recognitionTiming: parseRecognitionTiming(row.recognition_timing_json),
     contentHash: optionalString(row.content_hash),
+    agentClassification: parseAgentClassification(row.agent_classification_json),
     captureInput: parseCaptureInput(row.capture_input_json)
   };
+}
+
+function parseAgentClassification(value: string | null): LibraryItem["agentClassification"] {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as LibraryItem["agentClassification"];
+  } catch {
+    return undefined;
+  }
 }
 
 function parseRecognitionTiming(value: string | null): LibraryItem["recognitionTiming"] {
@@ -730,10 +858,32 @@ function optionalNumber(value: number | null): number | undefined {
   return value ?? undefined;
 }
 
-function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params: Array<string | number> } {
+type SearchQuery = {
+  ftsQuery: string;
+  likePattern?: string;
+};
+
+function buildListFrom(search: SearchQuery | undefined): { withSql: string; joinSql: string; params: string[] } {
+  if (!search) {
+    return { withSql: "", joinSql: "", params: [] };
+  }
+
+  return {
+    withSql: `
+      with fts_matches as (
+        select item_id, bm25(saved_items_fts, 0.0, 8.0, 4.0, 3.0, 1.0, 5.0, 5.0, 2.0, 2.0, 3.0, 4.0) as rank
+        from saved_items_fts
+        where saved_items_fts match ?
+      )
+    `,
+    joinSql: "left join fts_matches on fts_matches.item_id = saved_items.id",
+    params: [search.ftsQuery]
+  };
+}
+
+function buildWhereClause(query: NormalizedLibraryQuery, search: SearchQuery | undefined): { sql: string; params: Array<string | number> } {
   const clauses: string[] = [];
   const params: Array<string | number> = [];
-  const ftsQuery = buildFtsQuery(query.q);
 
   if (query.filter === "favorite") {
     clauses.push("favorite = 1");
@@ -747,9 +897,33 @@ function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params:
     params.push(query.sourceType);
   }
 
-  if (ftsQuery) {
-    clauses.push("id in (select item_id from saved_items_fts where saved_items_fts match ?)");
-    params.push(ftsQuery);
+  if (query.agentCategoryId) {
+    clauses.push(
+      `(json_valid(agent_classification_json) and (json_extract(agent_classification_json, '$.classification.contentCategory.id') = ? or 'legacy-' || json_extract(agent_classification_json, '$.classification.primaryCategory') = ?))`
+    );
+    params.push(query.agentCategoryId, query.agentCategoryId);
+  }
+
+  if (search) {
+    const searchClauses = ["fts_matches.item_id is not null"];
+    if (search.likePattern) {
+      const likeColumns = [
+        "title",
+        "summary",
+        "excerpt",
+        "readable_text",
+        "source_name",
+        "author",
+        "url",
+        "canonical_url",
+        "note",
+        "tags_json",
+        "agent_classification_json"
+      ];
+      searchClauses.push(...likeColumns.map((column) => `${column} like ? escape '\\'`));
+      params.push(...likeColumns.map(() => search.likePattern!));
+    }
+    clauses.push(`(${searchClauses.join(" or ")})`);
   }
 
   return {
@@ -758,10 +932,34 @@ function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params:
   };
 }
 
-function buildFtsQuery(value: string | undefined): string | undefined {
+function buildOrderBy(search: SearchQuery | undefined): string {
+  if (!search) {
+    return "order by saved_items.saved_at desc";
+  }
+
+  return "order by case when fts_matches.item_id is null then 1 else 0 end, fts_matches.rank, saved_items.saved_at desc";
+}
+
+function buildSearchQuery(value: string | undefined): SearchQuery | undefined {
   const tokens = value?.match(/[\p{L}\p{N}]+/gu)?.slice(0, 8);
   if (!tokens?.length) return undefined;
-  return tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(" AND ");
+  return {
+    ftsQuery: tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(" AND "),
+    likePattern: shouldUseLikeFallback(value, tokens) ? `%${escapeLikePattern(value ?? "")}%` : undefined
+  };
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+function shouldUseLikeFallback(value: string | undefined, tokens: string[]): boolean {
+  const normalized = value?.trim() ?? "";
+  return hasNonAsciiCharacter(normalized) || (tokens.length === 1 && normalized.length >= 4);
+}
+
+function hasNonAsciiCharacter(value: string): boolean {
+  return [...value].some((character) => character.charCodeAt(0) > 127);
 }
 
 function emptySourceCounts(): Record<SourceType, number> {

@@ -2,8 +2,11 @@ import type { LibraryStats } from "../../shared/types";
 import type { FilterKey, SourceFilter } from "../types";
 import { FilterNav } from "./FilterNav";
 import { MetricCard } from "./MetricCard";
+import { SettingsPanel } from "./SettingsPanel";
 import { SourceFilterBadges } from "./SourceFilterBadges";
 import { cn } from "@/lib/utils";
+
+const hunterMarkUrl = new URL("../../assets/brand/hunter-mark.svg", import.meta.url).href;
 
 export function LibrarySidebar({
   stats,
@@ -26,17 +29,34 @@ export function LibrarySidebar({
       aria-label="Library navigation"
       aria-hidden={collapsed}
       className={cn(
-        "hunter-panel-top min-w-0 bg-sidebar p-4 text-sidebar-foreground transition-[opacity,padding,transform] duration-[var(--motion-slow)] ease-[var(--ease-out-soft)] lg:sticky lg:top-0 lg:flex lg:h-full lg:flex-col lg:overflow-y-auto lg:pt-11",
-        collapsed && "lg:pointer-events-none lg:overflow-hidden lg:p-0 lg:opacity-0"
+        "hunter-panel-top min-w-0 overflow-hidden bg-sidebar text-sidebar-foreground lg:sticky lg:top-0 lg:block lg:h-full",
+        collapsed && "lg:pointer-events-none"
       )}
     >
-      <FilterNav active={filter} stats={stats} onChange={onFilterChange} />
+      <div className="hunter-sidebar-content flex h-full w-full flex-col overflow-y-auto px-3.5 pb-3.5 pt-4 lg:w-[var(--library-sidebar-expanded-width)] lg:pt-11">
+        <div className="hunter-sidebar-brand" aria-label="Hunter">
+          <span className="hunter-sidebar-brand-mark" aria-hidden="true">
+            <img src={hunterMarkUrl} alt="" className="size-3.5" />
+          </span>
+          <span className="hunter-sidebar-brand-copy">
+            <span className="hunter-sidebar-brand-name">Hunter</span>
+          </span>
+        </div>
 
-      <SourceFilterBadges active={sourceFilter} stats={stats} onChange={onSourceFilterChange} />
+        <div className="grid shrink-0 gap-3">
+          <FilterNav active={filter} stats={stats} onChange={onFilterChange} />
 
-      <div className="mt-5 grid shrink-0 grid-cols-2 gap-2 lg:mt-auto">
-        <MetricCard label="Saved" value={stats.total} />
-        <MetricCard label="Unread" value={stats.unread} />
+          <SourceFilterBadges active={sourceFilter} stats={stats} onChange={onSourceFilterChange} />
+        </div>
+
+        <div className="hunter-sidebar-metrics mt-4 grid shrink-0 grid-cols-2 gap-2 lg:mt-auto">
+          <MetricCard label="Saved" value={stats.total} />
+          <MetricCard label="Unread" value={stats.unread} />
+        </div>
+
+        <div className="hunter-sidebar-settings">
+          <SettingsPanel triggerClassName="hunter-sidebar-settings-button" showTriggerLabel />
+        </div>
       </div>
     </aside>
   );

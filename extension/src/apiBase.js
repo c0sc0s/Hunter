@@ -2,9 +2,10 @@
  * Resolves which local Hunter API the extension should talk to.
  *
  * Why this exists: the desktop sidecar binds the first free port in the
- * 4317–4319 range, so the extension can no longer hardcode 4317. We probe the
- * candidates, cache the winner, and fall back to the user-configured value
- * when the user has pointed the extension at a non-local server.
+ * 4317–4319 range, so the extension can no longer hardcode 4317. In automatic
+ * mode we probe every candidate, verify that it is a Hunter API, rank the
+ * sidecars, cache the winner, and fall back to the configured value when no
+ * candidate is reachable.
  *
  * Caching policy:
  *   - On a successful probe we remember the URL for PROBE_CACHE_TTL_MS.
@@ -17,11 +18,12 @@
  */
 
 const LOCAL_CANDIDATES = Object.freeze(["http://127.0.0.1:4317", "http://127.0.0.1:4318", "http://127.0.0.1:4319"]);
+const DEFAULT_LOCAL_BASE = LOCAL_CANDIDATES[0];
 
 export const PROBE_TIMEOUT_MS = 1500;
 export const PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
 
-/** @type {{ url: string; expiresAt: number } | null} */
+/** @type {{ key: string; url: string; expiresAt: number } | null} */
 let cache = null;
 
 /**
@@ -57,13 +59,22 @@ const backends = {
 };
 
 /**
- * Probe a single base URL for `/api/health`. Returns true iff it answers 200
- * within PROBE_TIMEOUT_MS. Never throws.
+ * @typedef {object} HealthProbe
+ * @property {string} url
+ * @property {string} [owner]
+ * @property {number} [startedAtMs]
+ */
+
+/**
+ * Probe a single base URL for `/api/health`. Returns a structured signal only
+ * for real Hunter APIs, not arbitrary services that happen to answer 200.
+ * Never throws.
  *
  * @param {string} base
+ * @returns {Promise<HealthProbe | undefined>}
  */
 async function probe(base) {
-  if (!backends.fetch) return false;
+  if (!backends.fetch) return undefined;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
@@ -71,9 +82,17 @@ async function probe(base) {
       method: "GET",
       signal: controller.signal
     });
-    return response.ok;
+    if (!response.ok) return undefined;
+    const body = await response.json().catch(() => undefined);
+    if (!body || body.service !== "hunter-api") return undefined;
+    const startedAtMs = typeof body.startedAt === "string" ? Date.parse(body.startedAt) : Number.NaN;
+    return {
+      url: base,
+      owner: typeof body.owner === "string" ? body.owner : undefined,
+      startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : undefined
+    };
   } catch {
-    return false;
+    return undefined;
   } finally {
     clearTimeout(timer);
   }
@@ -102,46 +121,93 @@ function isLocalhostBase(value) {
  *   1. If the user has explicitly configured a non-localhost server, respect
  *      it verbatim (no probing).
  *   2. Otherwise consult the cache; if still valid, return it.
- *   3. Otherwise probe the local candidates in order and cache the first hit.
+ *   3. Otherwise probe and rank the local candidates, then cache the best hit.
  *   4. If every probe fails, return the user-configured base anyway so save
  *      attempts fail loudly (and are queued) at the HTTP layer instead of
  *      silently returning undefined here.
  *
+ * @typedef {object} ResolveApiBaseOptions
+ * @property {boolean} [preferConfigured] true when the user explicitly chose this local base.
+ */
+
+/**
  * @param {string} configuredBase  the user's saved apiBase (or the default)
+ * @param {ResolveApiBaseOptions} [options]
  * @returns {Promise<string>}
  */
-export async function resolveApiBase(configuredBase) {
-  const trimmed = configuredBase?.trim() || LOCAL_CANDIDATES[0];
+export async function resolveApiBase(configuredBase, options = {}) {
+  const trimmed = configuredBase?.trim() || DEFAULT_LOCAL_BASE;
+  const preferConfigured = Boolean(options.preferConfigured);
 
   if (!isLocalhostBase(trimmed)) {
     return trimmed;
   }
 
+  const cacheKey = `${preferConfigured ? "configured" : "auto"}:${trimmed}`;
   const now = backends.now();
-  if (cache && cache.expiresAt > now) {
+  if (cache && cache.key === cacheKey && cache.expiresAt > now) {
     return cache.url;
   }
 
-  for (const candidate of listLocalCandidates(trimmed)) {
-    if (await probe(candidate)) {
-      cache = { url: candidate, expiresAt: backends.now() + PROBE_CACHE_TTL_MS };
-      return candidate;
+  if (preferConfigured) {
+    const configuredHit = await probe(trimmed);
+    if (configuredHit) {
+      cache = { key: cacheKey, url: trimmed, expiresAt: backends.now() + PROBE_CACHE_TTL_MS };
+      return trimmed;
     }
+    return trimmed;
+  }
+
+  const hits = [];
+  for (const candidate of listLocalCandidates(trimmed)) {
+    const hit = await probe(candidate);
+    if (hit) hits.push(hit);
+  }
+
+  const best = pickBestLocalCandidate(hits);
+  if (best) {
+    cache = { key: cacheKey, url: best.url, expiresAt: backends.now() + PROBE_CACHE_TTL_MS };
+    return best.url;
   }
 
   return trimmed;
 }
 
 /**
- * Returns the candidate list including the user-configured base when it is a
- * localhost URL outside the default 4317–4319 set. Used by callers that want
- * to enumerate every plausible local origin (e.g. flush triggers).
+ * Returns the candidate list with the configured local base first, without
+ * duplicating it in the default 4317–4319 set.
  *
  * @param {string} configuredBase
  */
 export function listLocalCandidates(configuredBase) {
   const trimmed = configuredBase?.trim();
   if (!trimmed || !isLocalhostBase(trimmed)) return [...backends.candidates];
-  if (backends.candidates.includes(trimmed)) return [...backends.candidates];
-  return [trimmed, ...backends.candidates];
+  return [trimmed, ...backends.candidates.filter((candidate) => candidate !== trimmed)];
+}
+
+/**
+ * @param {HealthProbe[]} hits
+ */
+function pickBestLocalCandidate(hits) {
+  return hits
+    .map((hit, order) => ({
+      hit,
+      order,
+      ownerScore: ownerPriority(hit.owner),
+      startedAtMs: hit.startedAtMs ?? 0
+    }))
+    .sort((a, b) => b.ownerScore - a.ownerScore || b.startedAtMs - a.startedAtMs || a.order - b.order)[0]?.hit;
+}
+
+/**
+ * @param {string | undefined} owner
+ */
+function ownerPriority(owner) {
+  return (
+    {
+      "electron-packaged": 300,
+      "electron-dev": 200,
+      standalone: 100
+    }[owner || ""] ?? 0
+  );
 }

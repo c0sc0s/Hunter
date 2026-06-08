@@ -7,6 +7,8 @@
  * save form is useful for the current resource.
  */
 
+export const CONTENT_SUPPORT_GATE_ENABLED = false;
+
 export function detectSupportedResourceInPage() {
   const url = String(location.href || "");
   const parsedUrl = safeUrl(url);

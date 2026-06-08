@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CaptureEvent, LibraryItem, LibraryStats, SourceType } from "../shared/types";
+import { collectAgentContentCategories } from "./agents/contentCategories";
 import { resolveDataDir } from "./dataDir";
 import type { RecognitionJob } from "./repositories/types";
 import { seedItems } from "./seed";
@@ -137,7 +138,8 @@ export function getStats(items: LibraryItem[]): LibraryStats {
     read: items.filter((item) => item.status === "read").length,
     archived: items.filter((item) => item.status === "archived").length,
     favorite: items.filter((item) => item.favorite).length,
-    sources
+    sources,
+    agentCategories: collectAgentContentCategories(items)
   };
 }
 

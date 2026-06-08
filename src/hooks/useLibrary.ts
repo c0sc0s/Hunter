@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LibraryPage, LibraryStats, PublicLibraryItem, UpdateItemInput } from "../../shared/types";
 import { emptyPage, emptyStats, pageSize } from "../constants";
-import { deleteLibraryItem, fetchLibrary, patchLibraryItem } from "../lib/api";
+import {
+  classifyIncrementalLibraryItems,
+  classifyLibraryItem,
+  deleteLibraryItem,
+  fetchAgentLlmStatus,
+  fetchLibrary,
+  patchLibraryItem
+} from "../lib/api";
+import { itemNeedsAgentClassification } from "../lib/agent";
 import { mergeItems } from "../lib/items";
 import { updateStatsForDelete, updateStatsForPatch } from "../lib/stats";
 import type { FilterKey, SourceFilter } from "../types";
@@ -23,6 +31,8 @@ export type UseLibrary = {
   setFilter: (filter: FilterKey) => void;
   sourceFilter: SourceFilter;
   setSourceFilter: (sourceFilter: SourceFilter) => void;
+  agentCategoryId: string | null;
+  setAgentCategoryId: (agentCategoryId: string | null) => void;
   query: string;
   setQuery: (query: string) => void;
   selected: PublicLibraryItem | null;
@@ -32,10 +42,14 @@ export type UseLibrary = {
   setDetailOpen: (open: boolean) => void;
   loading: boolean;
   loadingMore: boolean;
+  agentClassifying: boolean;
+  agentClassifyError: string | null;
   error: string | null;
   reload: () => void;
   loadMore: () => void;
   patchItem: (id: string, patch: UpdateItemInput) => Promise<void>;
+  classifyItem: (id: string) => Promise<void>;
+  classifyIncremental: () => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
 };
 
@@ -49,12 +63,16 @@ export function useLibrary(): UseLibrary {
   const [detailOpen, setDetailOpen] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [agentCategoryId, setAgentCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const loadingVisibleRef = useRef(true);
   const loadingRunRef = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [agentClassifying, setAgentClassifying] = useState(false);
+  const [agentClassifyError, setAgentClassifyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoClassifyKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -101,6 +119,7 @@ export function useLibrary(): UseLibrary {
           offset,
           filter: filter === "all" ? undefined : filter,
           sourceType: sourceFilter === "all" ? undefined : sourceFilter,
+          agentCategoryId: agentCategoryId ?? undefined,
           q: query.trim() || undefined
         });
         const nextItems = append ? mergeItems(itemsRef.current, data.items) : data.items;
@@ -137,7 +156,7 @@ export function useLibrary(): UseLibrary {
         }
       }
     },
-    [filter, query, setLoadingVisible, sourceFilter]
+    [agentCategoryId, filter, query, setLoadingVisible, sourceFilter]
   );
 
   useEffect(() => {
@@ -168,6 +187,70 @@ export function useLibrary(): UseLibrary {
     },
     [loadItems]
   );
+
+  const classifyItem = useCallback(
+    async (id: string) => {
+      try {
+        setAgentClassifyError(null);
+        const updated = await classifyLibraryItem(id);
+        setItems((current) => current.map((item) => (item.id === id ? updated : item)));
+        await loadItems();
+      } catch (classifyError) {
+        const message = classifyError instanceof Error ? classifyError.message : "Could not classify item";
+        setAgentClassifyError(message);
+        setError(message);
+        throw classifyError;
+      }
+    },
+    [loadItems]
+  );
+
+  const classifyIncremental = useCallback(
+    async (showError = true) => {
+      if (agentClassifying) return;
+
+      setAgentClassifying(true);
+      if (showError) setAgentClassifyError(null);
+      try {
+        const result = await classifyIncrementalLibraryItems(6);
+        if (result.classified > 0) {
+          await loadItems();
+        }
+      } catch (classifyError) {
+        const message = classifyError instanceof Error ? classifyError.message : "Could not classify new items";
+        if (showError) {
+          setAgentClassifyError(message);
+          setError(message);
+        }
+        throw classifyError;
+      } finally {
+        setAgentClassifying(false);
+      }
+    },
+    [agentClassifying, loadItems]
+  );
+
+  useEffect(() => {
+    if (loading || agentClassifying || !items.length) return;
+
+    const staleIds = items.filter(itemNeedsAgentClassification).map((item) => item.id);
+    if (!staleIds.length) return;
+
+    const key = staleIds.join("|");
+    if (autoClassifyKeyRef.current === key) return;
+    autoClassifyKeyRef.current = key;
+
+    void (async () => {
+      try {
+        const status = await fetchAgentLlmStatus();
+        if (!status.ok) return;
+        await classifyIncremental(false);
+      } catch {
+        // Manual classification surfaces the actionable error. The automatic
+        // pass only runs when the model is reachable, so failed probes stay quiet.
+      }
+    })();
+  }, [agentClassifying, classifyIncremental, items, loading]);
 
   const deleteItem = useCallback(
     async (id: string) => {
@@ -219,6 +302,8 @@ export function useLibrary(): UseLibrary {
     setFilter,
     sourceFilter,
     setSourceFilter,
+    agentCategoryId,
+    setAgentCategoryId,
     query,
     setQuery,
     selected,
@@ -228,10 +313,14 @@ export function useLibrary(): UseLibrary {
     setDetailOpen,
     loading,
     loadingMore,
+    agentClassifying,
+    agentClassifyError,
     error,
     reload,
     loadMore,
     patchItem,
+    classifyItem,
+    classifyIncremental: () => classifyIncremental(true),
     deleteItem
   };
 }

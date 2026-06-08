@@ -19,7 +19,8 @@ export const emptyStats: LibraryStats = {
     video: 0,
     pdf: 0,
     other: 0
-  }
+  },
+  agentCategories: []
 };
 
 export const emptyPage: LibraryPage = {

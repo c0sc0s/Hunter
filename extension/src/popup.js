@@ -1,4 +1,4 @@
-import { detectSupportedResourceInPage } from "./contentSupport.js";
+import { CONTENT_SUPPORT_GATE_ENABLED, detectSupportedResourceInPage } from "./contentSupport.js";
 import { collectCoverCandidatesInPage, upgradeCdnCoverResolution } from "./coverPreview.js";
 
 const defaultApiBase = "http://127.0.0.1:4317";
@@ -34,11 +34,11 @@ async function init() {
 }
 
 apiBaseInput.addEventListener("change", () => {
-  chrome.storage.local.set({ apiBase: apiBaseInput.value.trim() || defaultApiBase });
+  void persistApiBaseInput();
 });
 
 saveButton.addEventListener("click", async () => {
-  if (!currentSupport?.supported) {
+  if (CONTENT_SUPPORT_GATE_ENABLED && !currentSupport?.supported) {
     renderCaptureMode("unsupported");
     return;
   }
@@ -47,8 +47,7 @@ saveButton.addEventListener("click", async () => {
   setStatus("Saving", "saving");
 
   try {
-    const apiBase = apiBaseInput.value.trim() || defaultApiBase;
-    await chrome.storage.local.set({ apiBase });
+    await persistApiBaseInput();
     const result = await chrome.runtime.sendMessage({
       type: "hunter-save-active-tab",
       tabId: currentTab?.id,
@@ -96,6 +95,18 @@ function renderCurrentTab(tab) {
 }
 
 async function prepareSupportedPage(tabId) {
+  if (!CONTENT_SUPPORT_GATE_ENABLED) {
+    currentSupport = {
+      supported: true,
+      kind: "unrestricted",
+      confidence: 1,
+      signals: [{ source: "support_gate", value: "disabled" }]
+    };
+    renderCaptureMode("supported");
+    void loadCoverPreview(tabId);
+    return;
+  }
+
   currentSupport = await extractResourceSupport(tabId);
   if (!currentSupport.supported) {
     renderCaptureMode("unsupported");
@@ -159,7 +170,7 @@ async function extractPreviewCoverUrl(tabId) {
       func: collectCoverCandidatesInPage
     });
     const candidates = Array.isArray(result?.result) ? result.result : [];
-    return candidates[0] ?? null;
+    return coverCandidateUrl(candidates[0]) ?? null;
   } catch (error) {
     // Common causes: chrome:// or chrome-extension:// pages refuse injection,
     // host_permissions missing for this URL, tab navigated mid-call. Leave a
@@ -168,6 +179,12 @@ async function extractPreviewCoverUrl(tabId) {
     console.warn("[hunter] cover preview extraction failed", error);
     return null;
   }
+}
+
+function coverCandidateUrl(candidate) {
+  if (typeof candidate === "string") return candidate;
+  if (candidate && typeof candidate.url === "string") return candidate.url;
+  return null;
 }
 
 async function extractResourceSupport(tabId) {
@@ -210,4 +227,14 @@ function splitTags(value) {
     .split(/[,\s]+/)
     .map((tag) => tag.trim())
     .filter(Boolean);
+}
+
+async function persistApiBaseInput() {
+  const apiBase = apiBaseInput.value.trim() || defaultApiBase;
+  if (apiBase === defaultApiBase) {
+    await chrome.storage.local.remove(["apiBase", "apiBaseMode"]);
+    return;
+  }
+
+  await chrome.storage.local.set({ apiBase, apiBaseMode: "manual" });
 }

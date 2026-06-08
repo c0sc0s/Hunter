@@ -364,6 +364,1141 @@
     background-repeat: no-repeat;
   }
 
+  .hunter-library-item-card {
+    border-color: rgb(255 255 255 / 6.5%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 2.8%), rgb(255 255 255 / 0.8%) 42px, transparent 86px),
+      linear-gradient(
+        145deg,
+        color-mix(in oklch, var(--card) 88%, var(--background)),
+        color-mix(in oklch, var(--card) 66%, var(--background))
+      );
+    background-clip: padding-box;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 4%),
+      0 1px 0 rgb(255 255 255 / 2%),
+      0 10px 26px rgb(0 0 0 / 13%);
+    transition:
+      transform var(--motion-base) var(--ease-out-soft),
+      border-color var(--motion-base) var(--ease-out-soft),
+      background-color var(--motion-base) var(--ease-out-soft),
+      box-shadow var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-library-item-card > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  .hunter-library-item-card:hover {
+    transform: translate3d(0, -1px, 0);
+    border-color: rgb(255 255 255 / 9.5%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5%),
+      0 1px 0 rgb(255 255 255 / 3%),
+      0 16px 38px rgb(0 0 0 / 20%);
+  }
+
+  .hunter-library-item-card[data-selected="true"] {
+    border-color: color-mix(in oklch, var(--primary), transparent 80%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 3.8%), rgb(255 255 255 / 1.1%) 46px, transparent 96px),
+      linear-gradient(
+        145deg,
+        color-mix(in oklch, var(--card) 100%, var(--background)),
+        color-mix(in oklch, var(--muted) 46%, var(--background))
+      );
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5.5%),
+      0 18px 48px rgb(0 0 0 / 27%);
+  }
+
+  .hunter-library-item-card[data-selected="true"]:hover {
+    border-color: color-mix(in oklch, var(--primary), transparent 72%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 6%),
+      0 20px 52px rgb(0 0 0 / 30%);
+  }
+
+  .hunter-library-item-card-no-cover {
+    border-color: rgb(255 255 255 / 8%);
+  }
+
+  .hunter-item-card-accent {
+    height: 1px;
+    width: min(6.75rem, calc(100% - 2rem));
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgb(255 255 255 / 18%), rgb(255 255 255 / 4%) 58%, transparent);
+  }
+
+  .hunter-library-item-card[data-selected="true"] .hunter-item-card-accent {
+    background: linear-gradient(90deg, color-mix(in oklch, var(--primary), transparent 72%), rgb(255 255 255 / 5%) 62%, transparent);
+  }
+
+  .hunter-item-card-cover {
+    height: 13.25rem;
+    border-bottom: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .hunter-item-card-cover .hunter-cover-image {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .hunter-item-card-cover .hunter-cover-gloss {
+    background: linear-gradient(180deg, rgb(255 255 255 / 7%), transparent 38%, transparent 100%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  }
+
+  .hunter-item-card-cover .hunter-cover-type-badge {
+    z-index: 2;
+  }
+
+  .hunter-item-card-cover-type-badge {
+    position: absolute !important;
+    top: 0.75rem;
+    z-index: 5 !important;
+  }
+
+  .hunter-item-card-cover-bleed {
+    pointer-events: none;
+    position: absolute !important;
+    top: 0;
+    left: 0;
+    z-index: 1 !important;
+    width: 100%;
+    height: 13.25rem;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0.24;
+    filter: blur(36px) saturate(1.1) brightness(0.4);
+    transform: scale(1.055);
+    transition:
+      opacity var(--motion-base) var(--ease-out-soft),
+      filter var(--motion-base) var(--ease-out-soft);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, transparent 34%, rgb(0 0 0 / 68%) 58%, rgb(0 0 0 / 50%) 100%);
+    mask-image: linear-gradient(180deg, transparent 0%, transparent 34%, rgb(0 0 0 / 68%) 58%, rgb(0 0 0 / 50%) 100%);
+  }
+
+  .hunter-item-card-cover-fade {
+    pointer-events: none;
+    position: absolute !important;
+    top: 0;
+    bottom: 0;
+    inset-inline: 0;
+    z-index: 3 !important;
+    height: auto;
+    background:
+      radial-gradient(80% 46% at 24% 68%, rgb(20 103 147 / 28%), transparent 72%),
+      radial-gradient(68% 44% at 78% 62%, rgb(180 86 48 / 22%), transparent 74%),
+      linear-gradient(
+        180deg,
+        rgb(0 0 0 / 0%) 0%,
+        rgb(0 0 0 / 14%) 30%,
+        rgb(5 7 10 / 54%) 55%,
+        rgb(10 11 15 / 88%) 72%,
+        rgb(13 14 18 / 98%) 100%
+      );
+    -webkit-backdrop-filter: blur(10px) saturate(1.06);
+    backdrop-filter: blur(10px) saturate(1.06);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, transparent 24%, rgb(0 0 0 / 68%) 42%, #000 58%, #000 100%);
+    mask-image: linear-gradient(180deg, transparent 0%, transparent 24%, rgb(0 0 0 / 68%) 42%, #000 58%, #000 100%);
+  }
+
+  .hunter-library-item-card:hover .hunter-item-card-cover-bleed {
+    opacity: 0.28;
+  }
+
+  .hunter-library-item-card[data-selected="true"] .hunter-item-card-cover-bleed {
+    opacity: 0.3;
+    filter: blur(38px) saturate(1.14) brightness(0.44);
+  }
+
+  .hunter-item-card-header-with-cover {
+    z-index: 4 !important;
+    margin-top: -6.65rem;
+    padding-top: 1.9rem;
+  }
+
+  .hunter-item-card-content-with-cover {
+    z-index: 4 !important;
+    gap: 0.85rem !important;
+  }
+
+  .hunter-library-item-card[data-has-cover="true"] .hunter-item-card-header-with-cover .text-muted-foreground,
+  .hunter-library-item-card[data-has-cover="true"] .hunter-item-card-content-with-cover .text-muted-foreground {
+    color: rgb(230 233 240 / 76%);
+    text-shadow: 0 1px 8px rgb(0 0 0 / 26%);
+  }
+
+  .hunter-library-item-card[data-has-cover="true"] .hunter-item-card-source-name {
+    color: rgb(245 247 250 / 78%);
+    font-weight: 650;
+  }
+
+  .hunter-library-item-card[data-has-cover="true"] [data-slot="card-title"] {
+    color: rgb(255 255 255 / 96%);
+    text-shadow: 0 2px 14px rgb(0 0 0 / 42%);
+  }
+
+  .hunter-item-card-footer {
+    border-radius: 0;
+    border-top: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .hunter-library-item-card[data-has-cover="true"] .hunter-item-card-footer {
+    z-index: 4 !important;
+    margin-top: 0;
+    padding-top: 0.45rem;
+    padding-bottom: 0.6rem;
+  }
+
+  .hunter-item-card-footer [data-slot="button"] {
+    opacity: 0.68;
+  }
+
+  .hunter-library-item-card:hover .hunter-item-card-footer [data-slot="button"],
+  .hunter-library-item-card[data-selected="true"] .hunter-item-card-footer [data-slot="button"] {
+    opacity: 1;
+  }
+
+  .hunter-item-card-open-action {
+    color: color-mix(in oklch, var(--foreground), var(--muted-foreground) 16%);
+    gap: 0.35rem;
+    padding-inline: 0.45rem 0.55rem;
+  }
+
+  .hunter-item-card-open-action span {
+    font-size: 0.6875rem;
+    font-weight: 650;
+    line-height: 1;
+  }
+
+  .hunter-item-card-open-action:hover {
+    border-color: rgb(255 255 255 / 12%);
+    color: var(--foreground);
+  }
+
+  .hunter-item-source-badge,
+  .hunter-item-tag {
+    border-color: rgb(255 255 255 / 7%) !important;
+    background: rgb(255 255 255 / 4%) !important;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 12%) !important;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 1.4%);
+  }
+
+  .hunter-sidebar-brand {
+    display: flex;
+    height: 2.375rem;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 0.75rem;
+    padding-inline: 0.35rem;
+    color: var(--foreground);
+  }
+
+  .hunter-sidebar-brand-mark {
+    display: inline-grid;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex: none;
+    place-items: center;
+    border: 1px solid rgb(255 255 255 / 6.8%);
+    border-radius: calc(var(--radius) - 0.05rem);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 6.5%), rgb(255 255 255 / 1%)),
+      color-mix(in oklch, var(--sidebar-accent) 60%, var(--sidebar));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 4.5%),
+      0 8px 18px rgb(0 0 0 / 10%);
+  }
+
+  .hunter-sidebar-brand-mark img {
+    display: block;
+    filter: drop-shadow(0 1px 0 rgb(0 0 0 / 22%));
+  }
+
+  .hunter-sidebar-brand-copy {
+    display: grid;
+    min-width: 0;
+  }
+
+  .hunter-sidebar-brand-name {
+    overflow: hidden;
+    color: color-mix(in oklch, var(--foreground), var(--muted-foreground) 6%);
+    font-size: 0.875rem;
+    font-weight: 760;
+    letter-spacing: 0;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hunter-filter-nav {
+    display: grid;
+    flex-shrink: 0;
+    gap: 0.125rem;
+    border: 1px solid rgb(255 255 255 / 5.8%);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgb(255 255 255 / 2.6%), rgb(255 255 255 / 0.45%) 64%, transparent), rgb(255 255 255 / 1.8%);
+    padding: 0.35rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 3.5%),
+      0 10px 24px rgb(0 0 0 / 8%);
+  }
+
+  .hunter-filter-row {
+    display: flex;
+    min-width: 0;
+    height: 2.25rem;
+    align-items: center;
+    gap: 0.55rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) - 0.075rem);
+    padding: 0.25rem 0.45rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 20%);
+    background: transparent;
+    text-align: left;
+    font-size: 0.8125rem;
+    line-height: 1;
+    transition:
+      color var(--motion-base) var(--ease-out-soft),
+      background-color var(--motion-base) var(--ease-out-soft),
+      border-color var(--motion-base) var(--ease-out-soft),
+      box-shadow var(--motion-base) var(--ease-out-soft),
+      transform var(--motion-fast) var(--ease-out-soft);
+  }
+
+  .hunter-filter-row:hover {
+    border-color: rgb(255 255 255 / 5.4%);
+    background: rgb(255 255 255 / 3%);
+    color: var(--foreground);
+  }
+
+  .hunter-filter-row:active {
+    transform: translateY(1px);
+  }
+
+  .hunter-filter-row:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklch, var(--ring), transparent 40%);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring), transparent 76%);
+  }
+
+  .hunter-filter-row[data-active="true"] {
+    border-color: rgb(255 255 255 / 7.5%);
+    background: linear-gradient(180deg, rgb(255 255 255 / 5%), rgb(255 255 255 / 1.15%)), rgb(255 255 255 / 3.5%);
+    color: var(--foreground);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5%),
+      0 8px 18px rgb(0 0 0 / 9%);
+  }
+
+  .hunter-filter-row-mark {
+    width: 0.1875rem;
+    height: 1rem;
+    flex: none;
+    border-radius: 999px;
+    background: transparent;
+    transition:
+      background-color var(--motion-base) var(--ease-out-soft),
+      opacity var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-filter-row:hover .hunter-filter-row-mark {
+    background: rgb(255 255 255 / 7%);
+    opacity: 0.65;
+  }
+
+  .hunter-filter-row[data-active="true"] .hunter-filter-row-mark {
+    background: color-mix(in oklch, var(--chart-2), white 8%);
+    opacity: 1;
+  }
+
+  .hunter-filter-row-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    color: currentColor;
+    opacity: 0.78;
+    transition:
+      opacity var(--motion-base) var(--ease-out-soft),
+      transform var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-filter-row[data-active="true"] .hunter-filter-row-icon {
+    opacity: 1;
+    transform: translateX(1px);
+  }
+
+  .hunter-source-panel {
+    border: 1px solid rgb(255 255 255 / 5.8%);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 2.6%), rgb(255 255 255 / 0.5%) 48px, transparent 96px),
+      color-mix(in oklch, var(--sidebar-accent) 42%, var(--sidebar));
+    padding: 0.625rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 3.5%),
+      0 10px 24px rgb(0 0 0 / 8%);
+  }
+
+  .hunter-source-panel-icon {
+    display: inline-grid;
+    width: 1.25rem;
+    height: 1.25rem;
+    place-items: center;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 14%);
+  }
+
+  .hunter-source-filter {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.55rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) - 0.075rem);
+    padding: 0.35rem 0.45rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 16%);
+    background: transparent;
+    text-align: left;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition:
+      color var(--motion-base) var(--ease-out-soft),
+      background-color var(--motion-base) var(--ease-out-soft),
+      border-color var(--motion-base) var(--ease-out-soft),
+      box-shadow var(--motion-base) var(--ease-out-soft),
+      transform var(--motion-fast) var(--ease-out-soft);
+  }
+
+  .hunter-source-filter:hover {
+    border-color: rgb(255 255 255 / 5.4%);
+    background: rgb(255 255 255 / 2.8%);
+    color: var(--foreground);
+  }
+
+  .hunter-source-filter:active {
+    transform: translateY(1px);
+  }
+
+  .hunter-source-filter:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklch, var(--ring), transparent 35%);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring), transparent 72%);
+  }
+
+  .hunter-source-filter[data-active="true"] {
+    border-color: rgb(255 255 255 / 7%);
+    background: linear-gradient(180deg, rgb(255 255 255 / 4.8%), rgb(255 255 255 / 1%)), rgb(255 255 255 / 3%);
+    color: var(--foreground);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 4.8%),
+      0 8px 18px rgb(0 0 0 / 8%);
+  }
+
+  .hunter-source-filter-mark {
+    width: 0.1875rem;
+    height: 1rem;
+    flex: none;
+    border-radius: 999px;
+    background: transparent;
+    opacity: 0.65;
+    transition:
+      background-color var(--motion-base) var(--ease-out-soft),
+      opacity var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-source-filter:hover .hunter-source-filter-mark {
+    background: rgb(255 255 255 / 7%);
+  }
+
+  .hunter-source-filter[data-active="true"] .hunter-source-filter-mark {
+    background: color-mix(in oklch, var(--chart-2), white 8%);
+    opacity: 1;
+  }
+
+  .hunter-source-filter-icon {
+    display: inline-grid;
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    place-items: center;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 16%);
+    opacity: 0.82;
+    transition:
+      color var(--motion-base) var(--ease-out-soft),
+      opacity var(--motion-base) var(--ease-out-soft),
+      transform var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-source-filter[data-active="true"] .hunter-source-filter-icon {
+    color: var(--foreground);
+    opacity: 1;
+    transform: translateX(1px);
+  }
+
+  .hunter-filter-row-count,
+  .hunter-source-filter-count {
+    display: inline-flex;
+    min-width: 1.25rem;
+    height: 1.125rem;
+    flex: none;
+    align-items: center;
+    justify-content: flex-start;
+    border: 1px solid rgb(255 255 255 / 6%);
+    border-radius: 999px;
+    padding-inline: 0.375rem;
+    background: rgb(0 0 0 / 12%);
+    color: var(--muted-foreground);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .hunter-filter-row[data-active="true"] .hunter-filter-row-count,
+  .hunter-source-filter[data-active="true"] .hunter-source-filter-count {
+    border-color: rgb(255 255 255 / 9%);
+    background: rgb(255 255 255 / 6%);
+    color: var(--foreground);
+  }
+
+  .hunter-sidebar-metrics {
+    padding-top: 0.75rem;
+  }
+
+  .hunter-sidebar-settings {
+    flex-shrink: 0;
+    padding-top: 0.75rem;
+  }
+
+  .hunter-sidebar-settings-button {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.55rem;
+    border: 1px solid rgb(255 255 255 / 5.8%);
+    background: rgb(255 255 255 / 2.2%);
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 18%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 3.2%);
+  }
+
+  .hunter-sidebar-settings-button:hover {
+    border-color: rgb(255 255 255 / 8%);
+    background: rgb(255 255 255 / 3.4%);
+    color: var(--foreground);
+  }
+
+  .hunter-settings-provider-option {
+    min-width: 0;
+    height: 1.75rem;
+    overflow: hidden;
+    border-radius: calc(var(--radius) - 0.1rem);
+    padding-inline: 0.45rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 14%);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition:
+      color var(--motion-base) var(--ease-out-soft),
+      background-color var(--motion-base) var(--ease-out-soft),
+      box-shadow var(--motion-base) var(--ease-out-soft);
+  }
+
+  .hunter-settings-provider-option:hover {
+    color: var(--foreground);
+    background: rgb(255 255 255 / 3%);
+  }
+
+  .hunter-settings-provider-option-active {
+    background: color-mix(in oklch, var(--background), var(--muted) 42%);
+    color: var(--foreground);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5%),
+      0 5px 14px rgb(0 0 0 / 12%);
+  }
+
+  .hunter-agent-filter-panel {
+    display: grid;
+    min-width: 0;
+    gap: 0.55rem;
+    border: 1px solid rgb(255 255 255 / 5.6%);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgb(255 255 255 / 2.8%), rgb(255 255 255 / 0.65%) 70%, transparent), rgb(255 255 255 / 1.4%);
+    padding: 0.55rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 3.4%),
+      0 10px 26px rgb(0 0 0 / 7%);
+  }
+
+  .hunter-agent-filter-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .hunter-agent-filter-title {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.42rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 22%);
+    font-size: 0.72rem;
+    font-weight: 720;
+    line-height: 1;
+  }
+
+  .hunter-agent-filter-title svg {
+    color: color-mix(in oklch, var(--chart-2), var(--foreground) 12%);
+  }
+
+  .hunter-agent-filter-clear {
+    width: 1.45rem;
+    height: 1.45rem;
+    color: var(--muted-foreground);
+  }
+
+  .hunter-agent-analyze-button {
+    height: 1.75rem;
+    flex: none;
+    gap: 0.35rem;
+    padding-inline: 0.55rem 0.65rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 24%);
+    font-size: 0.7rem;
+    font-weight: 700;
+  }
+
+  .hunter-agent-filter-chips {
+    display: flex;
+    min-width: 0;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+    scrollbar-width: none;
+  }
+
+  .hunter-agent-filter-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hunter-agent-filter-chip {
+    display: inline-flex;
+    min-width: max-content;
+    max-width: min(17rem, 64vw);
+    height: 1.9rem;
+    align-items: center;
+    gap: 0.45rem;
+    border: 1px solid rgb(255 255 255 / 5.8%);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 2.5%);
+    padding-inline: 0.7rem 0.38rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 14%);
+    line-height: 1;
+    transition:
+      color var(--motion-base) var(--ease-out-soft),
+      background-color var(--motion-base) var(--ease-out-soft),
+      border-color var(--motion-base) var(--ease-out-soft),
+      box-shadow var(--motion-base) var(--ease-out-soft),
+      transform var(--motion-fast) var(--ease-out-soft);
+  }
+
+  .hunter-agent-filter-chip:hover {
+    border-color: rgb(255 255 255 / 8%);
+    background: rgb(255 255 255 / 4%);
+    color: var(--foreground);
+  }
+
+  .hunter-agent-filter-chip:active {
+    transform: translateY(1px);
+  }
+
+  .hunter-agent-filter-chip:focus-visible {
+    outline: none;
+    border-color: color-mix(in oklch, var(--ring), transparent 38%);
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring), transparent 76%);
+  }
+
+  .hunter-agent-filter-chip-active {
+    border-color: rgb(255 255 255 / 10%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 7%), rgb(255 255 255 / 1.8%)), color-mix(in oklch, var(--chart-2), var(--background) 84%);
+    color: var(--foreground);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 6%),
+      0 8px 18px rgb(0 0 0 / 10%);
+  }
+
+  .hunter-agent-filter-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.73rem;
+    font-weight: 690;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hunter-agent-filter-chip-count {
+    display: inline-flex;
+    min-width: 1.2rem;
+    height: 1.15rem;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 6%);
+    border-radius: 999px;
+    background: rgb(0 0 0 / 13%);
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 12%);
+    font-size: 0.67rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hunter-agent-filter-chip-active .hunter-agent-filter-chip-count {
+    border-color: rgb(255 255 255 / 10%);
+    background: rgb(255 255 255 / 7%);
+    color: var(--foreground);
+  }
+
+  .hunter-agent-filter-error {
+    color: color-mix(in oklch, var(--destructive), var(--foreground) 14%);
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .hunter-metric-card {
+    display: grid;
+    min-width: 0;
+    gap: 0.5rem;
+    border: 1px solid rgb(255 255 255 / 5.8%);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgb(255 255 255 / 2.4%), rgb(255 255 255 / 0.45%) 72%, transparent), rgb(255 255 255 / 1.7%);
+    padding: 0.7rem 0.75rem 0.75rem;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 3.2%);
+  }
+
+  .hunter-metric-label {
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 8%);
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.055em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .hunter-metric-value {
+    color: var(--foreground);
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    letter-spacing: 0;
+    line-height: 1;
+  }
+
+  .hunter-library-masonry {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .hunter-library-masonry-column {
+    display: grid;
+    min-width: 0;
+    max-width: 100%;
+    align-content: start;
+  }
+
+  .hunter-detail-panel-surface {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 5.5%), rgb(255 255 255 / 2.4%) 48px, transparent 132px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.9%), transparent 14px),
+      linear-gradient(
+        135deg,
+        color-mix(in oklch, var(--card) 90%, var(--background)) 0%,
+        color-mix(in oklch, var(--muted) 56%, var(--background)) 48%,
+        color-mix(in oklch, var(--card) 84%, var(--background)) 100%
+      );
+    box-shadow:
+      inset 1px 0 0 rgb(255 255 255 / 1.4%),
+      inset 0 1px 0 rgb(255 255 255 / 4%);
+  }
+
+  .hunter-detail-content {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .hunter-detail-cover-shell {
+    --hunter-detail-action-button-height: 2rem;
+    position: relative;
+    isolation: isolate;
+    min-width: 0;
+    max-width: 100%;
+    height: clamp(12rem, 28vw, 15.5rem);
+    margin-bottom: 0.25rem;
+    background: transparent;
+  }
+
+  .hunter-detail-cover-shape {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklch, var(--muted) 65%, var(--background));
+    filter: drop-shadow(0 18px 34px rgb(0 0 0 / 24%));
+  }
+
+  .hunter-detail-cover-shape::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background:
+      linear-gradient(180deg, rgb(0 0 0 / 0%) 36%, rgb(0 0 0 / 24%) 68%, rgb(0 0 0 / 58%) 100%),
+      linear-gradient(90deg, rgb(0 0 0 / 32%) 0%, rgb(0 0 0 / 12%) 34%, rgb(0 0 0 / 0%) 62%);
+  }
+
+  .hunter-detail-cover-frame {
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0;
+    background: color-mix(in oklch, var(--muted) 65%, var(--background));
+    box-shadow: none;
+  }
+
+  .hunter-detail-cover-frame .hunter-cover-gloss {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 9%), transparent 36%, rgb(0 0 0 / 12%)),
+      radial-gradient(70% 50% at 72% 18%, rgb(255 255 255 / 13%), transparent 66%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  }
+
+  .hunter-detail-cover-source-badge {
+    z-index: 3 !important;
+  }
+
+  .hunter-detail-heading-block-with-cover {
+    padding-inline: 0.125rem;
+  }
+
+  .hunter-detail-no-cover-header > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .hunter-detail-no-cover-group {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .hunter-detail-no-cover-top {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.85rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .hunter-detail-header-actions {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    flex: none;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .hunter-detail-no-cover-top .hunter-detail-priority-meta {
+    margin-bottom: 0;
+  }
+
+  .hunter-detail-cover-caption {
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    display: flex;
+    min-width: 0;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 3rem 0.95rem 0.85rem;
+    background: linear-gradient(180deg, transparent, rgb(0 0 0 / 34%) 46%, rgb(0 0 0 / 58%));
+  }
+
+  .hunter-detail-priority-meta {
+    display: grid;
+    align-items: start;
+    gap: 0.38rem;
+    margin-bottom: 0.95rem;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 16%);
+  }
+
+  .hunter-detail-priority-meta-date-only {
+    margin-bottom: 0.8rem;
+  }
+
+  .hunter-detail-saved-row {
+    display: flex;
+    max-width: 100%;
+    align-items: center;
+    padding-inline: 0.125rem;
+  }
+
+  .hunter-detail-priority-meta [data-slot="badge"] {
+    flex: none;
+    justify-self: start;
+  }
+
+  .hunter-detail-source-chip,
+  .hunter-detail-saved-chip {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.42rem;
+  }
+
+  .hunter-detail-source-chip {
+    flex: 1 1 auto;
+    max-width: 100%;
+    overflow: hidden;
+    color: color-mix(in oklch, var(--foreground), var(--muted-foreground) 18%);
+    font-size: 0.86rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .hunter-detail-cover-caption .hunter-detail-source-chip {
+    max-width: calc(100% - 7.75rem);
+    color: rgb(255 255 255 / 92%);
+    font-size: 0.8rem;
+    text-shadow: 0 1px 10px rgb(0 0 0 / 32%);
+  }
+
+  .hunter-detail-cover-caption .hunter-detail-site-icon {
+    background: rgb(255 255 255 / 12%);
+    color: rgb(255 255 255 / 72%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  }
+
+  .hunter-detail-saved-chip {
+    flex: 0 1 100%;
+    justify-content: flex-start;
+    max-width: 100%;
+    overflow: hidden;
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 10%);
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .hunter-detail-priority-meta-date-only .hunter-detail-saved-chip {
+    max-width: 100%;
+  }
+
+  .hunter-detail-saved-chip svg {
+    flex: none;
+    color: color-mix(in oklch, var(--chart-2), white 4%);
+  }
+
+  .hunter-detail-saved-copy,
+  .hunter-detail-saved-date {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hunter-detail-saved-copy {
+    flex: 0 1 auto;
+  }
+
+  .hunter-detail-saved-date {
+    flex: 1 1 auto;
+  }
+
+  .hunter-detail-meta-separator {
+    flex: none;
+    color: color-mix(in oklch, var(--muted-foreground), transparent 25%);
+  }
+
+  .hunter-detail-open-link {
+    gap: 0;
+  }
+
+  .hunter-detail-more-trigger {
+    border-radius: 999px;
+    border-color: rgb(255 255 255 / 8%);
+    background: color-mix(in oklch, var(--card) 58%, transparent);
+    color: color-mix(in oklch, var(--foreground) 80%, var(--muted-foreground));
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 7%),
+      0 4px 12px rgb(0 0 0 / 14%);
+    -webkit-backdrop-filter: blur(14px) saturate(1.08);
+    backdrop-filter: blur(14px) saturate(1.08);
+  }
+
+  .hunter-detail-more-trigger:hover,
+  .hunter-detail-more-trigger[aria-expanded="true"] {
+    border-color: rgb(255 255 255 / 14%);
+    background: color-mix(in oklch, var(--muted) 70%, transparent);
+    color: var(--foreground);
+  }
+
+  .hunter-detail-cover-more {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 3;
+  }
+
+  .hunter-detail-header-more {
+    position: static;
+    flex: none;
+  }
+
+  .hunter-detail-actions {
+    max-width: 100%;
+    gap: 0.5rem;
+  }
+
+  .hunter-detail-cover-actions {
+    pointer-events: auto;
+    position: static;
+    z-index: 4;
+    width: max-content;
+    max-width: 7rem;
+    flex: none;
+  }
+
+  .hunter-detail-header-read-action {
+    flex: none;
+  }
+
+  .hunter-detail-read-action {
+    min-width: 0;
+    height: var(--hunter-detail-action-button-height, 2rem);
+    gap: 0.4rem;
+    border-radius: 999px;
+    border-color: rgb(255 255 255 / 9%);
+    background: linear-gradient(180deg, rgb(255 255 255 / 7%), rgb(255 255 255 / 1.6%)), color-mix(in oklch, var(--card) 78%, transparent);
+    color: color-mix(in oklch, var(--foreground) 90%, var(--muted-foreground));
+    padding-inline: 0.75rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 7%),
+      0 3px 10px rgb(0 0 0 / 12%);
+    -webkit-backdrop-filter: blur(14px) saturate(1.08);
+    backdrop-filter: blur(14px) saturate(1.08);
+  }
+
+  .hunter-detail-read-action span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hunter-detail-read-action:hover {
+    transform: translateY(-1px);
+  }
+
+  .hunter-detail-read-action-unread {
+    border-color: rgb(255 255 255 / 14%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 9.5%), rgb(255 255 255 / 2.2%)), color-mix(in oklch, var(--card) 86%, transparent);
+    color: var(--foreground);
+  }
+
+  .hunter-detail-read-action-unread:hover {
+    border-color: rgb(255 255 255 / 20%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 11%), rgb(255 255 255 / 2.8%)), color-mix(in oklch, var(--muted) 62%, transparent);
+  }
+
+  .hunter-detail-read-action-read {
+    border-color: color-mix(in oklch, var(--chart-2), transparent 48%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 7%), rgb(255 255 255 / 1.8%)), color-mix(in oklch, var(--chart-2), transparent 82%);
+    color: color-mix(in oklch, var(--chart-2), white 14%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 9%),
+      0 8px 22px color-mix(in oklch, var(--chart-2), transparent 86%);
+  }
+
+  .hunter-detail-read-action-read:hover {
+    border-color: color-mix(in oklch, var(--chart-2), transparent 34%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 7.5%), rgb(255 255 255 / 2%)), color-mix(in oklch, var(--chart-2), transparent 76%);
+    color: color-mix(in oklch, var(--chart-2), white 20%);
+  }
+
+  .hunter-detail-read-action-read svg {
+    fill: color-mix(in oklch, var(--chart-2), transparent 78%);
+  }
+
+  .hunter-detail-cover-actions .hunter-detail-read-action {
+    max-width: 100%;
+    border-color: rgb(255 255 255 / 16%);
+    background: linear-gradient(180deg, rgb(255 255 255 / 10%), rgb(255 255 255 / 2.5%)), color-mix(in oklch, var(--card) 62%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 9%),
+      0 8px 20px rgb(0 0 0 / 20%);
+  }
+
+  .hunter-detail-cover-actions .hunter-detail-read-action-read {
+    border-color: color-mix(in oklch, var(--chart-2), transparent 34%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 9%), rgb(255 255 255 / 2.2%)), color-mix(in oklch, var(--chart-2), transparent 74%);
+    color: color-mix(in oklch, var(--chart-2), white 18%);
+  }
+
+  .hunter-detail-cover-actions .hunter-detail-read-action-unread {
+    color: var(--foreground);
+  }
+
+  .hunter-detail-wrap {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .hunter-agent-panel {
+    min-width: 0;
+    max-width: 100%;
+    border-radius: var(--radius-lg);
+    border: 1px solid color-mix(in oklch, var(--border), transparent 18%);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 4.5%), rgb(255 255 255 / 1.5%)), color-mix(in oklch, var(--muted) 42%, transparent);
+    padding: 0.85rem;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+  }
+
+  .hunter-agent-badge,
+  .hunter-agent-topic {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hunter-agent-topic {
+    color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 16%);
+  }
+
   .skeleton-shimmer {
     background-image: linear-gradient(
       90deg,
@@ -386,6 +1521,15 @@
 
   .hunter-window-drag-region {
     -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .hunter-window-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  .hunter-sidebar-content {
+    contain: layout paint;
   }
 }
 

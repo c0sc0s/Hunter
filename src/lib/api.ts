@@ -1,4 +1,13 @@
-import type { CaptureEventsResponse, LibraryQuery, LibraryResponse, PublicLibraryItem, UpdateItemInput } from "../../shared/types";
+import type {
+  AgentIncrementalClassificationResponse,
+  AgentLlmSettings,
+  CaptureEventsResponse,
+  LibraryQuery,
+  LibraryResponse,
+  PublicLibraryItem,
+  UpdateAgentLlmSettingsInput,
+  UpdateItemInput
+} from "../../shared/types";
 import { getDesktopBridge, type HunterDesktopBridge } from "./desktopBridge";
 
 // Single owner of the HTTP API contract on the client. Routes that change here
@@ -122,6 +131,7 @@ export async function fetchLibrary(query: LibraryQuery & { offset?: number; limi
   if (query.offset !== undefined) params.set("offset", String(query.offset));
   if (query.filter && query.filter !== "all") params.set("filter", query.filter);
   if (query.sourceType) params.set("sourceType", query.sourceType);
+  if (query.agentCategoryId) params.set("agentCategoryId", query.agentCategoryId);
   if (query.q?.trim()) params.set("q", query.q.trim());
 
   return getJson<LibraryResponse>(await url(`/api/items?${params.toString()}`));
@@ -129,6 +139,26 @@ export async function fetchLibrary(query: LibraryQuery & { offset?: number; limi
 
 export async function patchLibraryItem(id: string, patch: UpdateItemInput): Promise<PublicLibraryItem> {
   return sendJson<PublicLibraryItem>(await url(`/api/items/${encodeURIComponent(id)}`), "PATCH", patch);
+}
+
+export async function classifyLibraryItem(id: string): Promise<PublicLibraryItem> {
+  return sendJson<PublicLibraryItem>(await url(`/api/agent/items/${encodeURIComponent(id)}/classify`), "POST", undefined);
+}
+
+export async function classifyIncrementalLibraryItems(limit = 6): Promise<AgentIncrementalClassificationResponse> {
+  return sendJson<AgentIncrementalClassificationResponse>(await url("/api/agent/items/classify-missing"), "POST", { limit });
+}
+
+export async function fetchAgentLlmStatus(): Promise<{ ok: boolean; error?: string }> {
+  return getJson<{ ok: boolean; error?: string }>(await url("/api/agent/local-llm"));
+}
+
+export async function fetchAgentLlmSettings(): Promise<AgentLlmSettings> {
+  return getJson<AgentLlmSettings>(await url("/api/agent/settings"));
+}
+
+export async function saveAgentLlmSettings(input: UpdateAgentLlmSettingsInput): Promise<AgentLlmSettings> {
+  return sendJson<AgentLlmSettings>(await url("/api/agent/settings"), "PATCH", input);
 }
 
 export async function deleteLibraryItem(id: string): Promise<void> {
@@ -144,7 +174,7 @@ export async function fetchCaptureEvents(limit = 50): Promise<CaptureEventsRespo
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
-  if (!response.ok) throw new ApiError(response.status, `Request failed: HTTP ${response.status}`);
+  if (!response.ok) throw await apiError(response, "Request failed");
   return (await response.json()) as T;
 }
 
@@ -152,8 +182,23 @@ async function sendJson<T>(url: string, method: "POST" | "PATCH", body: unknown)
   const response = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: body === undefined ? undefined : JSON.stringify(body)
   });
-  if (!response.ok) throw new ApiError(response.status, `Request failed: HTTP ${response.status}`);
+  if (!response.ok) throw await apiError(response, "Request failed");
   return (await response.json()) as T;
+}
+
+async function apiError(response: Response, fallback: string): Promise<ApiError> {
+  return new ApiError(response.status, await errorMessage(response, fallback));
+}
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: unknown; code?: unknown };
+    const message = typeof body.error === "string" && body.error.trim() ? body.error.trim() : fallback;
+    const code = typeof body.code === "string" && body.code.trim() ? body.code.trim() : undefined;
+    return code ? `${message} (${code})` : message;
+  } catch {
+    return `${fallback}: HTTP ${response.status}`;
+  }
 }

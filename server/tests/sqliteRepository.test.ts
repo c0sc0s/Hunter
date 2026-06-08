@@ -134,10 +134,12 @@ try {
 
   const second = item({
     id: "item-3",
-    url: "https://example.com/b",
-    canonicalUrl: "https://example.com/b",
+    url: "https://example.com/research/climate-markets",
+    canonicalUrl: "https://example.com/research/climate-markets",
     title: "Archive title",
+    sourceName: "Climate Daily",
     summary: "A separate archived note about climate markets.",
+    author: "Ada Lovelace",
     status: "archived",
     favorite: false,
     tags: ["markets"]
@@ -159,6 +161,18 @@ try {
   assert.equal(search.page.total, 1);
   assert.equal(search.items[0]?.id, "item-1");
 
+  const sourceSearch = await repo.list({ q: "Climate Daily", limit: 10 });
+  assert.equal(sourceSearch.page.total, 1);
+  assert.equal(sourceSearch.items[0]?.id, "item-3");
+
+  const authorSearch = await repo.list({ q: "Ada", limit: 10 });
+  assert.equal(authorSearch.page.total, 1);
+  assert.equal(authorSearch.items[0]?.id, "item-3");
+
+  const urlSearch = await repo.list({ q: "research climate", limit: 10 });
+  assert.equal(urlSearch.page.total, 1);
+  assert.equal(urlSearch.items[0]?.id, "item-3");
+
   const filtered = await repo.list({ filter: "archived", limit: 10 });
   assert.equal(filtered.page.total, 1);
   assert.equal(filtered.items[0]?.id, "item-3");
@@ -167,6 +181,37 @@ try {
   assert.equal(paged.items.length, 1);
   assert.equal(paged.page.total, 2);
   assert.equal(paged.page.hasMore, true);
+
+  const titleMatch = item({
+    id: "item-4",
+    url: "https://example.com/search/title",
+    canonicalUrl: "https://example.com/search/title",
+    title: "Durable search ranking",
+    summary: "A focused note about library ordering.",
+    savedAt: "2026-05-01T00:00:00.000Z"
+  });
+  const bodyMatch = item({
+    id: "item-5",
+    url: "https://example.com/search/body",
+    canonicalUrl: "https://example.com/search/body",
+    title: "Newer unrelated title",
+    summary: "A recent item whose body mentions durable search.",
+    savedAt: "2026-06-03T00:00:00.000Z"
+  });
+  await repo.upsertQueued(titleMatch, {
+    url: titleMatch.url,
+    snapshot: { url: titleMatch.url, textContent: "Title match snapshot." }
+  });
+  await repo.upsertQueued(bodyMatch, {
+    url: bodyMatch.url,
+    snapshot: { url: bodyMatch.url, textContent: "Body match snapshot." }
+  });
+
+  const rankedSearch = await repo.list({ q: "durable", limit: 10 });
+  assert.equal(rankedSearch.items[0]?.id, "item-4");
+
+  assert.equal(await repo.delete(titleMatch.id), true);
+  assert.equal(await repo.delete(bodyMatch.id), true);
 
   const job = {
     id: "job-1",

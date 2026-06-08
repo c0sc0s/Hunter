@@ -14,6 +14,7 @@ Use this file as the stable map for humans and coding agents. Keep `AGENTS.md` s
 - `docs/DATABASE_DESIGN.md`: production storage direction and schema planning.
 - `docs/CONTENT_RECOGNITION.md`: deterministic content recognition rules and source-specific behavior.
 - `docs/DESKTOP_OFFLINE_ARCHITECTURE.md`: Electron desktop shell + browser extension offline queue design, covering process model, sidecar supervision, port handshake, queue API, lease concurrency, data migration, and versioning.
+- `docs/AGENT_LOCAL_LLM.md`: optional agent content-understanding module backed by Ollama, DeepSeek, or another OpenAI-compatible provider, with API boundaries and verification.
 
 ## Harness
 
@@ -30,6 +31,7 @@ Use this file as the stable map for humans and coding agents. Keep `AGENTS.md` s
 - `pnpm lint`
 - `pnpm format:check`
 - `pnpm test`
+- `pnpm test:agent`
 - `pnpm smoke:api`
 - `pnpm golden:browser`
 - `pnpm golden:extension`
