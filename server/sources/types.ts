@@ -1,8 +1,8 @@
-import type { CaptureMethod, ConnectorProvider, EnrichmentState, PageSnapshot, SourceAccess, SourceType } from "../../shared/types";
+import type { EnrichmentState, PageSnapshot, SourceType } from "../../shared/types";
 
 export type SourceExtractionInput = {
   url: string;
-  snapshot?: PageSnapshot;
+  snapshot: PageSnapshot;
 };
 
 export type ExtractedContent = {
@@ -22,11 +22,8 @@ export type ExtractedContent = {
   wordCount?: number;
   confidence: number;
   extractionState: EnrichmentState;
-  captureMethod: CaptureMethod;
   extractor?: string;
-  sourceAccess: SourceAccess;
   sourceMessage?: string;
-  requiredConnector?: ConnectorProvider;
 };
 
 export type SourceAdapter = {

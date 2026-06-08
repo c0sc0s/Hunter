@@ -1,17 +1,47 @@
 import type { ExtractedContent, SourceAdapter } from "./types";
-import { cleanText } from "./url";
+import { cleanText, faviconFor } from "./url";
 
 const sourceTypes = new Set(["article", "post", "tweet", "feishu", "video", "pdf", "other"]);
-const extractionStates = new Set(["processing", "ready", "partial", "needs_connector", "failed"]);
-const captureMethods = new Set(["url_fetch", "extension_snapshot", "source_adapter", "connector"]);
-const sourceAccessValues = new Set(["public", "browser_snapshot", "requires_auth", "connector_required"]);
-const connectorProviders = new Set(["feishu", "x"]);
+const extractionStates = new Set(["processing", "ready", "partial", "failed"]);
 
 export function assertExtractedContentContract(adapter: Pick<SourceAdapter, "id">, content: ExtractedContent): void {
   const errors = validateExtractedContent(content);
   if (errors.length) {
     throw new Error(`Source adapter ${adapter.id} returned invalid content: ${errors.join("; ")}`);
   }
+}
+
+// Cosmetic / best-effort fields should not crash the recognition pipeline.
+// Drop them to undefined when they violate the contract; hard fields stay strict.
+// Favicon falls back to a deterministic per-host icon so a bad snapshot value
+// does not strip an item of its visual identity.
+export function sanitizeExtractedContent(content: ExtractedContent): ExtractedContent {
+  return {
+    ...content,
+    favicon: sanitizeHttpUrl(content.favicon) ?? faviconFallback(content.url),
+    coverImage: sanitizeHttpUrl(content.coverImage),
+    publishedAt: sanitizeDate(content.publishedAt),
+    wordCount: sanitizeWholeNumber(content.wordCount)
+  };
+}
+
+function sanitizeHttpUrl(value: string | undefined): string | undefined {
+  return isHttpUrl(value) ? value : undefined;
+}
+
+function faviconFallback(url: string): string | undefined {
+  if (!isHttpUrl(url)) return undefined;
+  return faviconFor(url);
+}
+
+function sanitizeDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return Number.isNaN(Date.parse(value)) ? undefined : value;
+}
+
+function sanitizeWholeNumber(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 export function validateExtractedContent(content: ExtractedContent): string[] {
@@ -23,8 +53,6 @@ export function validateExtractedContent(content: ExtractedContent): string[] {
   requireText(errors, "sourceName", content.sourceName);
   requireEnum(errors, "sourceType", content.sourceType, sourceTypes);
   requireEnum(errors, "extractionState", content.extractionState, extractionStates);
-  requireEnum(errors, "captureMethod", content.captureMethod, captureMethods);
-  requireEnum(errors, "sourceAccess", content.sourceAccess, sourceAccessValues);
   requireConfidence(errors, content.confidence);
   requireOptionalUrl(errors, "coverImage", content.coverImage);
   requireOptionalUrl(errors, "favicon", content.favicon);
@@ -45,22 +73,8 @@ function requireStateContract(errors: string[], content: ExtractedContent): void
     errors.push("partial content without body must include sourceMessage");
   }
 
-  if (content.extractionState === "needs_connector") {
-    if (content.sourceAccess !== "connector_required") errors.push("needs_connector content must use connector_required sourceAccess");
-    if (!content.requiredConnector || !connectorProviders.has(content.requiredConnector)) {
-      errors.push("needs_connector content must include requiredConnector");
-    }
-    if (!cleanText(content.sourceMessage)) errors.push("needs_connector content must include sourceMessage");
-  } else if (content.requiredConnector) {
-    errors.push("requiredConnector is only valid for needs_connector content");
-  }
-
   if (content.extractionState === "failed") {
     errors.push("source adapters should throw instead of returning failed content");
-  }
-
-  if (content.sourceAccess === "connector_required" && content.extractionState !== "needs_connector") {
-    errors.push("connector_required sourceAccess is only valid for needs_connector content");
   }
 }
 

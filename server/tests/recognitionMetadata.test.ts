@@ -8,7 +8,7 @@ const base = {
   excerpt: "Recognition metadata makes reprocessing measurable.",
   readableText: "Recognition metadata makes reprocessing measurable and lets parser changes be compared safely.",
   contentHtml: "<article><p>Recognition metadata makes reprocessing measurable.</p></article>",
-  author: "Huntter",
+  author: "Hunter",
   publishedAt: "2026-06-02T00:00:00.000Z",
   language: "en"
 };

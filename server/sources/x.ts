@@ -1,11 +1,10 @@
 import { JSDOM } from "jsdom";
+import type { PageSnapshot } from "../../shared/types";
 import { contentHtmlFromSnapshot, contentHtmlFromText } from "./contentHtml";
 import { decideContentQuality } from "./contentQuality";
 import { isUsefulCoverImageUrl, selectCoverImage } from "./coverImage";
 import type { ExtractedContent, SourceAdapter } from "./types";
 import { cleanText, faviconFor, normalizeUrl } from "./url";
-
-const fetchTimeoutMs = 6000;
 
 export const xAdapter: SourceAdapter = {
   id: "x",
@@ -15,140 +14,60 @@ export const xAdapter: SourceAdapter = {
   },
   async extract({ url, snapshot }) {
     const normalizedUrl = normalizeUrl(url);
-    const selectedText = cleanText(snapshot?.selectedText);
-    if (selectedText.length >= 20) return buildBrowserSnapshotTweet(normalizedUrl, snapshot, selectedText, "browser_selection");
-
-    const oembed = await extractTweetOEmbed(normalizedUrl);
-    if (oembed) return oembed;
-
-    const snapshotText = cleanText(extractTweetTextFromSnapshotHtml(snapshot?.html) || snapshot?.textContent);
+    const selectedText = cleanText(snapshot.selectedText);
+    const snapshotText = cleanText(extractTweetTextFromSnapshotHtml(snapshot.html) || snapshot.textContent);
+    // Route everything through the shared quality gate so confidence,
+    // extraction state, and word count rules stay in contentQuality.ts.
     const quality = decideContentQuality([
-      { source: "browser_snapshot", text: snapshotText },
-      { source: "metadata", text: snapshot?.excerpt }
+      { source: "selected_text", text: selectedText },
+      { source: "tweet_snapshot", text: snapshotText },
+      { source: "metadata", text: snapshot.excerpt }
     ]);
 
-    if (quality.readableText.length >= 40)
-      return buildBrowserSnapshotTweet(normalizedUrl, snapshot, quality.readableText, quality.extractor);
-
-    return {
-      url: normalizedUrl,
-      canonicalUrl: normalizedUrl,
-      title: "X post",
-      sourceName: "X",
-      sourceType: "tweet",
-      excerpt: "",
-      readableText: "",
-      favicon: faviconFor(normalizedUrl),
-      confidence: 0.2,
-      extractionState: "needs_connector",
-      captureMethod: snapshot ? "extension_snapshot" : "url_fetch",
-      sourceAccess: "connector_required",
-      requiredConnector: "x",
-      sourceMessage: "This X post could not be resolved from public embed metadata. Save from the opened page or connect the X API."
-    };
+    return buildBrowserSnapshotTweet(normalizedUrl, snapshot, quality);
   }
 };
 
 async function buildBrowserSnapshotTweet(
   url: string,
-  snapshot: Parameters<SourceAdapter["extract"]>[0]["snapshot"],
-  text: string,
-  extractor: string
+  snapshot: PageSnapshot,
+  quality: ReturnType<typeof decideContentQuality>
 ): Promise<ExtractedContent> {
-  const normalizedText = cleanText(text);
-  const snapshotFields = extractSnapshotFields(snapshot?.html, url);
-  const title = cleanText(snapshotFields.title || snapshot?.title) || "X post";
+  const normalizedText = quality.readableText;
+  const snapshotFields = extractSnapshotFields(snapshot.html, url);
+  const title = cleanText(snapshotFields.title || snapshot.title) || "X post";
+  const hasBody = normalizedText.length > 0;
 
   return {
     url,
-    canonicalUrl: normalizeUrl(snapshot?.canonicalUrl ?? url),
+    canonicalUrl: normalizeUrl(snapshot.canonicalUrl ?? url),
     title,
-    sourceName: snapshotFields.author || snapshot?.siteName || "X",
+    sourceName: snapshotFields.author || snapshot.siteName || "X",
     sourceType: "tweet",
     excerpt: normalizedText.slice(0, 420),
     readableText: normalizedText,
-    contentHtml:
-      extractor === "browser_selection" ? contentHtmlFromText(normalizedText) : contentHtmlFromSnapshot(snapshot?.html, normalizedText),
+    contentHtml: hasBody
+      ? quality.extractor === "browser_selection"
+        ? contentHtmlFromText(normalizedText)
+        : contentHtmlFromSnapshot(snapshot.html, normalizedText)
+      : undefined,
     coverImage: await selectCoverImage({
       url,
-      html: snapshot?.html,
-      snapshotCandidates: snapshot?.imageCandidates,
+      html: snapshot.html,
+      snapshotCandidates: snapshot.imageCandidates,
       preferred: snapshotFields.image
     }),
-    favicon: snapshot?.favicon ?? faviconFor(url),
+    favicon: snapshot.favicon ?? faviconFor(url),
     author: snapshotFields.author,
-    publishedAt: snapshot?.publishedAt ?? snapshotFields.publishedAt,
-    wordCount: countTweetWords(normalizedText),
-    confidence: extractor === "browser_selection" ? 0.72 : normalizedText.length >= 160 ? 0.62 : 0.42,
-    extractionState: normalizedText.length >= 80 ? "ready" : "partial",
-    captureMethod: "extension_snapshot",
-    extractor,
-    sourceAccess: "browser_snapshot",
-    sourceMessage:
-      extractor === "browser_selection"
-        ? "Captured selected text from X. Connect the X API later for full bookmark/thread sync."
-        : "Captured visible X content from the browser. Connect the X API later for full bookmark/thread sync, author fidelity, and thread expansion."
+    publishedAt: snapshot.publishedAt ?? snapshotFields.publishedAt,
+    wordCount: quality.wordCount,
+    confidence: quality.confidence,
+    extractionState: quality.extractionState,
+    extractor: quality.extractor,
+    sourceMessage: hasBody
+      ? quality.sourceMessage
+      : "Only shallow page metadata was captured. Open the page and save with the browser extension for a fuller capture."
   };
-}
-
-async function extractTweetOEmbed(url: string): Promise<ExtractedContent | undefined> {
-  const endpoint = new URL("https://publish.twitter.com/oembed");
-  endpoint.searchParams.set("omit_script", "true");
-  endpoint.searchParams.set("url", url);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
-
-  try {
-    const response = await fetch(endpoint, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Huntter/0.1 (+https://localhost)"
-      }
-    });
-
-    if (!response.ok) return undefined;
-
-    const embed = (await response.json()) as {
-      author_name?: string;
-      author_url?: string;
-      html?: string;
-      provider_name?: string;
-    };
-
-    const dom = new JSDOM(embed.html ?? "", { url });
-    const document = dom.window.document;
-    const text = cleanText(document.querySelector("p")?.textContent ?? "");
-    const author = cleanText(embed.author_name);
-    const username = embed.author_url ? new URL(embed.author_url).pathname.replace("/", "") : "";
-    const dateText = cleanText(document.querySelector("a[href*='/status/']")?.textContent ?? "");
-    const publishedAt = parseDate(dateText);
-    const titleSubject = author || (username ? `@${username}` : "X");
-
-    return {
-      url,
-      canonicalUrl: url,
-      title: `${titleSubject} on X`,
-      sourceName: author || embed.provider_name || "X",
-      sourceType: "tweet",
-      excerpt: text.slice(0, 420),
-      readableText: text,
-      contentHtml: contentHtmlFromText(text),
-      favicon: faviconFor(url),
-      author: author || undefined,
-      publishedAt,
-      wordCount: countTweetWords(text),
-      confidence: text ? 0.76 : 0.42,
-      extractionState: text ? "ready" : "partial",
-      captureMethod: "source_adapter",
-      extractor: "oembed",
-      sourceAccess: "public",
-      sourceMessage: text ? undefined : "X embed metadata did not include post text."
-    };
-  } catch {
-    return undefined;
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function extractTweetTextFromSnapshotHtml(html: string | undefined): string | undefined {
@@ -168,12 +87,12 @@ function extractSnapshotFields(html: string | undefined, url: string) {
       document.title
   );
   const author = cleanText(article?.querySelector("[data-testid='User-Name']")?.textContent || title.match(/^(.+?)\s+on X\b/)?.[1]);
-  const image = cleanText(
-    document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content ||
-      document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]')?.content ||
-      article?.querySelector<HTMLImageElement>("img")?.currentSrc ||
-      article?.querySelector<HTMLImageElement>("img")?.src
-  );
+  const image = firstUsefulImage([
+    ...tweetMediaImages(article),
+    document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content,
+    document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]')?.content,
+    ...elementImageUrls(article)
+  ]);
   const timeValue =
     article?.querySelector<HTMLTimeElement>("time")?.dateTime || article?.querySelector("time")?.getAttribute("datetime") || "";
   const tweetText = cleanText(
@@ -185,20 +104,83 @@ function extractSnapshotFields(html: string | undefined, url: string) {
   return {
     title,
     author: author || undefined,
-    image: isUsefulCoverImageUrl(image) ? image : undefined,
+    image,
     publishedAt: parseDate(timeValue),
     text: tweetText || undefined
   };
 }
 
-function countTweetWords(text: string): number {
-  const latinWords = text.match(/[A-Za-z0-9]+/g)?.length ?? 0;
-  const cjkChars = text.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
-  return latinWords + Math.ceil(cjkChars / 2);
+function firstUsefulImage(values: Array<string | null | undefined>): string | undefined {
+  for (const value of values) {
+    const clean = cleanText(value ?? undefined);
+    if (isUsefulCoverImageUrl(clean)) return clean;
+  }
+  return undefined;
+}
+
+function tweetMediaImages(article: Element | null | undefined): string[] {
+  if (!article) return [];
+  return [
+    ...elementImageUrls(article.querySelector("[data-testid='tweetPhoto']")),
+    ...elementImageUrls(article.querySelector("[aria-label='Image']")),
+    ...Array.from(article.querySelectorAll<HTMLAnchorElement>("a[href*='/photo/']")).flatMap((element) => elementImageUrls(element)),
+    ...elementImageUrls(article)
+  ].filter(isTweetMediaUrl);
+}
+
+function elementImageUrls(root: Element | null | undefined): string[] {
+  if (!root) return [];
+  return [
+    ...Array.from(root.querySelectorAll<HTMLImageElement>("img")).flatMap((image) => [
+      image.currentSrc,
+      image.src,
+      image.getAttribute("data-src"),
+      bestSrcsetUrl(image.srcset || image.getAttribute("srcset") || image.getAttribute("data-srcset"))
+    ]),
+    ...Array.from(root.querySelectorAll<HTMLElement>("[style*='background']")).flatMap((element) =>
+      imageUrlsFromCss(element.getAttribute("style"))
+    )
+  ].filter((value): value is string => Boolean(value));
+}
+
+function isTweetMediaUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return /(^|\.)twimg\.com$/i.test(parsed.hostname) && parsed.pathname.includes("/media/");
+  } catch {
+    return false;
+  }
+}
+
+function bestSrcsetUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return value
+    .split(",")
+    .map((entry) => {
+      const [url, descriptor = ""] = entry.trim().split(/\s+/, 2);
+      const score = descriptor.endsWith("w")
+        ? Number.parseInt(descriptor, 10)
+        : descriptor.endsWith("x")
+          ? Number.parseFloat(descriptor) * 1000
+          : 0;
+      return { url, score: Number.isFinite(score) ? score : 0 };
+    })
+    .filter((entry) => entry.url)
+    .sort((a, b) => b.score - a.score)[0]?.url;
+}
+
+function imageUrlsFromCss(value: string | null): string[] {
+  if (!value) return [];
+  return Array.from(value.matchAll(/url\((['"]?)(.*?)\1\)/g), (match) => match[2]).filter(Boolean);
 }
 
 function getTweetStatusId(url: string): string | undefined {
-  const parsed = new URL(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
   const host = parsed.hostname.replace(/^www\./, "");
   if (host !== "x.com" && host !== "twitter.com") return undefined;
   return parsed.pathname.match(/\/status\/(\d+)/)?.[1];

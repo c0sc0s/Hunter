@@ -1,31 +1,33 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CaptureEvent, ConnectorRecord, LibraryItem, LibraryStats, SourceType } from "../shared/types";
-import type { ConnectorCredentialRecord, RecognitionJob } from "./repositories/types";
+import type { CaptureEvent, LibraryItem, LibraryStats, SourceType } from "../shared/types";
+import { collectAgentContentCategories } from "./agents/contentCategories";
+import { resolveDataDir } from "./dataDir";
+import type { RecognitionJob } from "./repositories/types";
 import { seedItems } from "./seed";
 
 type StoreFile = {
   items: LibraryItem[];
   recognitionJobs?: RecognitionJob[];
-  connectors?: ConnectorRecord[];
-  connectorCredentials?: ConnectorCredentialRecord[];
   captureEvents?: CaptureEvent[];
 };
 
 type StoreState = {
   items: LibraryItem[];
   recognitionJobs: RecognitionJob[];
-  connectors: ConnectorRecord[];
-  connectorCredentials: ConnectorCredentialRecord[];
   captureEvents: CaptureEvent[];
 };
 
-const dataDir = path.resolve("data");
-const storePath = path.join(dataDir, "huntter-store.json");
+const dataDir = resolveDataDir();
+const storePath = path.join(dataDir, "hunter-store.json");
 let operationChain: Promise<unknown> = Promise.resolve();
 
 export async function readItems(): Promise<LibraryItem[]> {
   return (await readStoreFromDisk()).items;
+}
+
+export async function readCaptureEvents(): Promise<CaptureEvent[]> {
+  return (await readStoreFromDisk()).captureEvents;
 }
 
 export async function writeItems(items: LibraryItem[]): Promise<void> {
@@ -63,49 +65,26 @@ async function readStoreFromDisk(): Promise<StoreState> {
     const raw = await readFile(storePath, "utf8");
     const parsed = JSON.parse(raw) as StoreFile;
     return {
-      items: parsed.items,
+      items: (parsed.items ?? []).map(stripLegacyItemFields),
       recognitionJobs: parsed.recognitionJobs ?? [],
-      connectors: parsed.connectors ?? [],
-      connectorCredentials: parsed.connectorCredentials ?? [],
-      captureEvents: parsed.captureEvents ?? []
+      captureEvents: (parsed.captureEvents ?? []).map(stripLegacyCaptureEventFields)
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
     }
 
-    const seeded = { items: seedItems, recognitionJobs: [], connectors: [], connectorCredentials: [], captureEvents: [] };
-    await writeStoreToDisk(seeded);
-    return seeded;
+    // Seed only when explicitly requested. A first-run production instance gets
+    // an empty store; the development harness opts in via HUNTER_SEED=true.
+    const items = shouldSeedStore() ? seedItems : [];
+    const initial: StoreState = { items, recognitionJobs: [], captureEvents: [] };
+    await writeStoreToDisk(initial);
+    return initial;
   }
 }
 
-export async function updateConnectors<T>(
-  update: (
-    connectors: ConnectorRecord[]
-  ) => Promise<{ connectors: ConnectorRecord[]; result: T }> | { connectors: ConnectorRecord[]; result: T }
-): Promise<T> {
-  return enqueueStoreOperation(async () => {
-    const state = await readStoreFromDisk();
-    const { connectors, result } = await update([...state.connectors]);
-    await writeStoreToDisk({ ...state, connectors });
-    return result;
-  });
-}
-
-export async function updateConnectorCredentials<T>(
-  update: (
-    credentials: ConnectorCredentialRecord[]
-  ) =>
-    | Promise<{ connectorCredentials: ConnectorCredentialRecord[]; result: T }>
-    | { connectorCredentials: ConnectorCredentialRecord[]; result: T }
-): Promise<T> {
-  return enqueueStoreOperation(async () => {
-    const state = await readStoreFromDisk();
-    const { connectorCredentials, result } = await update([...state.connectorCredentials]);
-    await writeStoreToDisk({ ...state, connectorCredentials });
-    return result;
-  });
+function shouldSeedStore(): boolean {
+  return process.env.HUNTER_SEED === "true";
 }
 
 export async function updateCaptureEvents<T>(
@@ -119,9 +98,22 @@ export async function updateCaptureEvents<T>(
   });
 }
 
+// Atomic write: serialize into a sibling temp file, then rename onto the real
+// path. `rename` is atomic on POSIX, so a reader either sees the previous
+// complete file or the new complete file, never a partial one. This protects
+// against SIGKILL mid-write (e.g. the desktop shell killing the sidecar) and
+// against an orphan sidecar racing with the live one on the same data dir.
 async function writeStoreToDisk(state: StoreState): Promise<void> {
   await mkdir(dataDir, { recursive: true });
-  await writeFile(storePath, JSON.stringify(state, null, 2), "utf8");
+  const tmpPath = `${storePath}.tmp.${process.pid}`;
+  const payload = JSON.stringify(state, null, 2);
+  try {
+    await writeFile(tmpPath, payload, "utf8");
+    await rename(tmpPath, storePath);
+  } catch (error) {
+    await unlink(tmpPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function enqueueStoreOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -146,7 +138,8 @@ export function getStats(items: LibraryItem[]): LibraryStats {
     read: items.filter((item) => item.status === "read").length,
     archived: items.filter((item) => item.status === "archived").length,
     favorite: items.filter((item) => item.favorite).length,
-    sources
+    sources,
+    agentCategories: collectAgentContentCategories(items)
   };
 }
 
@@ -160,4 +153,22 @@ function emptySourceCounts(): Record<SourceType, number> {
     pdf: 0,
     other: 0
   };
+}
+
+function stripLegacyItemFields(raw: LibraryItem): LibraryItem {
+  const legacy = raw as LibraryItem & { captureMethod?: unknown; sourceAccess?: unknown; requiredConnector?: unknown };
+  const { captureMethod: _captureMethod, sourceAccess: _sourceAccess, requiredConnector: _requiredConnector, ...rest } = legacy;
+  const enrichmentState = mapLegacyState(rest.enrichmentState);
+  return { ...rest, enrichmentState };
+}
+
+function stripLegacyCaptureEventFields(raw: CaptureEvent): CaptureEvent {
+  const legacy = raw as CaptureEvent & { captureMethod?: unknown };
+  const { captureMethod: _captureMethod, ...rest } = legacy;
+  const resultState = mapLegacyState(rest.resultState);
+  return { ...rest, resultState };
+}
+
+function mapLegacyState(state: string): LibraryItem["enrichmentState"] {
+  return state === "needs_connector" ? "failed" : (state as LibraryItem["enrichmentState"]);
 }

@@ -2,10 +2,9 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
+  AgentClassificationResult,
+  AgentContentCategorySummary,
   CaptureEvent,
-  ConnectorProvider,
-  ConnectorRecord,
-  ConnectorConnectionState,
   CreateItemInput,
   LibraryItem,
   LibraryQuery,
@@ -13,12 +12,13 @@ import type {
   SourceType,
   UpdateItemInput
 } from "../../shared/types";
-import { listConnectorViews } from "../connectors";
+import { resolveDataDir } from "../dataDir";
+import { collectAgentContentCategories, needsAgentClassification } from "../agents/contentCategories";
 import { normalizeRecognitionTiming } from "../recognitionTiming";
 import { readItems } from "../store";
 import { markRecognitionFailedItem, mergeQueuedItem, mergeRecognitionResult, patchItem } from "./itemMerges";
 import { buildPage, normalizeLibraryQuery, type NormalizedLibraryQuery } from "./listQuery";
-import type { ConnectorCredentialRecord, LibraryRepository, RecognitionJob, RecognitionJobStatus } from "./types";
+import type { LibraryRepository, RecognitionJob, RecognitionJobStatus } from "./types";
 
 type SqliteRepositoryOptions = {
   databasePath?: string;
@@ -52,16 +52,14 @@ type ItemRow = {
   confidence: number;
   enrichment_state: LibraryItem["enrichmentState"];
   enrichment_error: string | null;
-  capture_method: LibraryItem["captureMethod"] | null;
   extractor: string | null;
-  source_access: LibraryItem["sourceAccess"] | null;
   source_message: string | null;
-  required_connector: ConnectorProvider | null;
   recognition_version: number | null;
   recognized_at: string | null;
   recognition_duration_ms: number | null;
   recognition_timing_json: string | null;
   content_hash: string | null;
+  agent_classification_json: string | null;
   capture_input_json: string | null;
 };
 
@@ -78,34 +76,12 @@ type RecognitionJobRow = {
   updated_at: string;
 };
 
-type ConnectorRow = {
-  provider: ConnectorProvider;
-  connection_state: ConnectorConnectionState;
-  account_label: string | null;
-  connected_at: string | null;
-  last_sync_at: string | null;
-  last_error: string | null;
-  updated_at: string;
-};
-
-type ConnectorCredentialRow = {
-  provider: ConnectorProvider;
-  access_token_ciphertext: string;
-  refresh_token_ciphertext: string | null;
-  token_type: string;
-  scope: string | null;
-  access_token_expires_at: string | null;
-  refresh_token_expires_at: string | null;
-  updated_at: string;
-};
-
 type CaptureEventRow = {
   id: string;
   item_id: string | null;
   source_url: string;
   canonical_url: string | null;
   source_type: SourceType | null;
-  capture_method: CaptureEvent["captureMethod"];
   snapshot_bytes: number;
   result_state: CaptureEvent["resultState"];
   recognition_version: number | null;
@@ -115,12 +91,12 @@ type CaptureEventRow = {
   created_at: string;
 };
 
-const dataDir = path.resolve("data");
-const defaultDatabasePath = path.join(dataDir, "huntter.sqlite");
+const defaultDatabasePath = path.join(resolveDataDir(), "hunter.sqlite");
+const captureEventRetentionLimit = 1000;
 
 export async function createSqliteRepository(options: SqliteRepositoryOptions = {}): Promise<LibraryRepository> {
-  const repository = new SqliteRepository(options.databasePath ?? process.env.HUNTTER_SQLITE_PATH ?? defaultDatabasePath);
-  const shouldImportJson = options.importJson ?? process.env.HUNTTER_SQLITE_IMPORT_JSON !== "false";
+  const repository = new SqliteRepository(options.databasePath ?? process.env.HUNTER_SQLITE_PATH ?? defaultDatabasePath);
+  const shouldImportJson = options.importJson ?? process.env.HUNTER_SQLITE_IMPORT_JSON !== "false";
   if (shouldImportJson) {
     await repository.importJsonIfEmpty();
   }
@@ -142,16 +118,26 @@ export class SqliteRepository implements LibraryRepository {
       PRAGMA busy_timeout = 5000;
     `);
     this.ensureSchema();
+    this.migrateLegacySchema();
   }
 
   async list(query?: LibraryQuery) {
     const normalizedQuery = normalizeLibraryQuery(query);
-    const where = buildWhereClause(normalizedQuery);
-    const total = (this.db.prepare(`select count(*) as count from saved_items ${where.sql}`).get(...where.params) as { count: number })
-      .count;
+    const search = buildSearchQuery(normalizedQuery.q);
+    const from = buildListFrom(search);
+    const where = buildWhereClause(normalizedQuery, search);
+    const total = (
+      this.db
+        .prepare(`${from.withSql} select count(*) as count from saved_items ${from.joinSql} ${where.sql}`)
+        .get(...from.params, ...where.params) as {
+        count: number;
+      }
+    ).count;
     const rows = this.db
-      .prepare(`select * from saved_items ${where.sql} order by saved_at desc limit ? offset ?`)
-      .all(...where.params, normalizedQuery.limit, normalizedQuery.offset) as ItemRow[];
+      .prepare(
+        `${from.withSql} select saved_items.* from saved_items ${from.joinSql} ${where.sql} ${buildOrderBy(search)} limit ? offset ?`
+      )
+      .all(...from.params, ...where.params, normalizedQuery.limit, normalizedQuery.offset) as ItemRow[];
 
     return {
       items: rows.map(rowToItem),
@@ -163,6 +149,20 @@ export class SqliteRepository implements LibraryRepository {
   async findById(id: string) {
     const row = this.db.prepare("select * from saved_items where id = ?").get(id) as ItemRow | undefined;
     return row ? rowToItem(row) : undefined;
+  }
+
+  async listAgentCategories() {
+    return this.getAgentCategories();
+  }
+
+  async listAgentClassificationCandidates(limit: number) {
+    const rows = this.db
+      .prepare("select * from saved_items where enrichment_state in ('ready', 'partial') order by saved_at desc")
+      .all() as ItemRow[];
+    return rows
+      .map(rowToItem)
+      .filter(needsAgentClassification)
+      .slice(0, Math.max(0, Math.trunc(limit)));
   }
 
   async upsertQueued(item: LibraryItem, input: CreateItemInput) {
@@ -180,6 +180,21 @@ export class SqliteRepository implements LibraryRepository {
       if (!previous) return undefined;
 
       const updated = patchItem(previous, input);
+      this.putItem(updated);
+      return updated;
+    });
+  }
+
+  async setAgentClassification(id: string, result: AgentClassificationResult) {
+    return this.transaction(() => {
+      const previous = this.findItemById(id);
+      if (!previous) return undefined;
+
+      const updated = {
+        ...previous,
+        agentClassification: result,
+        updatedAt: new Date().toISOString()
+      };
       this.putItem(updated);
       return updated;
     });
@@ -266,6 +281,7 @@ export class SqliteRepository implements LibraryRepository {
 
   async recordCaptureEvent(event: CaptureEvent) {
     this.putCaptureEvent(event);
+    this.trimCaptureEvents();
     return event;
   }
 
@@ -273,81 +289,6 @@ export class SqliteRepository implements LibraryRepository {
     const safeLimit = Math.max(1, Math.min(200, limit));
     const rows = this.db.prepare("select * from capture_events order by created_at desc limit ?").all(safeLimit) as CaptureEventRow[];
     return rows.map(rowToCaptureEvent);
-  }
-
-  async listConnectors() {
-    const rows = this.db.prepare("select * from connectors").all() as ConnectorRow[];
-    return listConnectorViews(rows.map(rowToConnector));
-  }
-
-  async upsertConnector(record: ConnectorRecord) {
-    this.db
-      .prepare(
-        `
-        insert or replace into connectors (
-          provider,
-          connection_state,
-          account_label,
-          connected_at,
-          last_sync_at,
-          last_error,
-          updated_at
-        ) values (?, ?, ?, ?, ?, ?, ?)
-        `
-      )
-      .run(
-        record.provider,
-        record.connectionState,
-        record.accountLabel ?? null,
-        record.connectedAt ?? null,
-        record.lastSyncAt ?? null,
-        record.lastError ?? null,
-        record.updatedAt
-      );
-
-    return record;
-  }
-
-  async getConnectorCredential(provider: ConnectorProvider) {
-    const row = this.db.prepare("select * from connector_credentials where provider = ?").get(provider) as
-      | ConnectorCredentialRow
-      | undefined;
-    return row ? rowToConnectorCredential(row) : undefined;
-  }
-
-  async upsertConnectorCredential(record: ConnectorCredentialRecord) {
-    this.db
-      .prepare(
-        `
-        insert or replace into connector_credentials (
-          provider,
-          access_token_ciphertext,
-          refresh_token_ciphertext,
-          token_type,
-          scope,
-          access_token_expires_at,
-          refresh_token_expires_at,
-          updated_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?)
-        `
-      )
-      .run(
-        record.provider,
-        record.accessTokenCiphertext,
-        record.refreshTokenCiphertext ?? null,
-        record.tokenType,
-        record.scope ?? null,
-        record.accessTokenExpiresAt ?? null,
-        record.refreshTokenExpiresAt ?? null,
-        record.updatedAt
-      );
-
-    return record;
-  }
-
-  async deleteConnectorCredential(provider: ConnectorProvider) {
-    const result = this.db.prepare("delete from connector_credentials where provider = ?").run(provider) as { changes: number };
-    return result.changes > 0;
   }
 
   close(): void {
@@ -396,16 +337,14 @@ export class SqliteRepository implements LibraryRepository {
         confidence real not null default 0,
         enrichment_state text not null,
         enrichment_error text,
-        capture_method text,
         extractor text,
-        source_access text,
         source_message text,
-        required_connector text,
         recognition_version integer,
         recognized_at text,
         recognition_duration_ms integer,
         recognition_timing_json text,
         content_hash text,
+        agent_classification_json text,
         capture_input_json text
       );
 
@@ -414,16 +353,6 @@ export class SqliteRepository implements LibraryRepository {
       create index if not exists saved_items_source_updated_idx on saved_items (source_type, updated_at desc);
       create index if not exists saved_items_favorite_updated_idx on saved_items (favorite, updated_at desc);
       create index if not exists saved_items_content_hash_idx on saved_items (content_hash);
-
-      create virtual table if not exists saved_items_fts using fts5(
-        item_id unindexed,
-        title,
-        summary,
-        excerpt,
-        readable_text,
-        note,
-        tags
-      );
 
       create table if not exists recognition_jobs (
         id text primary key,
@@ -447,7 +376,6 @@ export class SqliteRepository implements LibraryRepository {
         source_url text not null,
         canonical_url text,
         source_type text,
-        capture_method text not null,
         snapshot_bytes integer not null default 0,
         result_state text not null,
         recognition_version integer,
@@ -459,43 +387,90 @@ export class SqliteRepository implements LibraryRepository {
 
       create index if not exists capture_events_created_idx on capture_events (created_at desc);
       create index if not exists capture_events_item_idx on capture_events (item_id, created_at desc);
-
-      create table if not exists connectors (
-        provider text primary key,
-        connection_state text not null,
-        account_label text,
-        connected_at text,
-        last_sync_at text,
-        last_error text,
-        updated_at text not null
-      );
-
-      create table if not exists connector_credentials (
-        provider text primary key,
-        access_token_ciphertext text not null,
-        refresh_token_ciphertext text,
-        token_type text not null,
-        scope text,
-        access_token_expires_at text,
-        refresh_token_expires_at text,
-        updated_at text not null
-      );
     `);
-    this.ensureColumn("saved_items", "required_connector", "text");
-    this.ensureColumn("saved_items", "recognition_version", "integer");
-    this.ensureColumn("saved_items", "recognized_at", "text");
-    this.ensureColumn("saved_items", "recognition_duration_ms", "integer");
-    this.ensureColumn("saved_items", "recognition_timing_json", "text");
-    this.ensureColumn("saved_items", "content_hash", "text");
-    this.ensureColumn("saved_items", "capture_input_json", "text");
+    this.createFtsTable();
   }
 
-  private ensureColumn(table: string, column: string, type: string): void {
+  private migrateLegacySchema(): void {
+    const itemColumns = this.columnNames("saved_items");
+    if (itemColumns.has("required_connector")) this.dropColumn("saved_items", "required_connector");
+    if (itemColumns.has("capture_method")) this.dropColumn("saved_items", "capture_method");
+    if (itemColumns.has("source_access")) this.dropColumn("saved_items", "source_access");
+    if (!itemColumns.has("agent_classification_json")) {
+      this.db.exec("alter table saved_items add column agent_classification_json text");
+    }
+
+    const captureEventColumns = this.columnNames("capture_events");
+    if (captureEventColumns.has("capture_method")) this.dropColumn("capture_events", "capture_method");
+
+    this.db.exec(`update saved_items set enrichment_state = 'failed' where enrichment_state = 'needs_connector'`);
+    this.db.exec(`update capture_events set result_state = 'failed' where result_state = 'needs_connector'`);
+
+    this.db.exec("drop table if exists connector_credentials");
+    this.db.exec("drop table if exists connectors");
+    this.migrateFtsSchema();
+  }
+
+  private createFtsTable(): void {
+    this.db.exec(`
+      create virtual table if not exists saved_items_fts using fts5(
+        item_id unindexed,
+        title,
+        summary,
+        excerpt,
+        readable_text,
+        source_name,
+        author,
+        url,
+        canonical_url,
+        note,
+        tags
+      );
+    `);
+  }
+
+  private migrateFtsSchema(): void {
+    const expectedColumns = new Set([
+      "item_id",
+      "title",
+      "summary",
+      "excerpt",
+      "readable_text",
+      "source_name",
+      "author",
+      "url",
+      "canonical_url",
+      "note",
+      "tags"
+    ]);
+    const columns = this.columnNames("saved_items_fts");
+    if ([...expectedColumns].every((column) => columns.has(column))) {
+      return;
+    }
+
+    this.db.exec("drop table if exists saved_items_fts");
+    this.createFtsTable();
+    this.rebuildFtsIndex();
+  }
+
+  private rebuildFtsIndex(): void {
+    const rows = this.db.prepare("select * from saved_items").all() as ItemRow[];
+    for (const row of rows) {
+      this.replaceFts(rowToItem(row));
+    }
+  }
+
+  private columnNames(table: string): Set<string> {
+    const rows = this.db.prepare(`pragma table_info(${table})`).all() as Array<{ name: string }>;
+    return new Set(rows.map((row) => row.name));
+  }
+
+  private dropColumn(table: string, column: string): void {
     try {
-      this.db.exec(`alter table ${table} add column ${column} ${type}`);
+      this.db.exec(`alter table ${table} drop column ${column}`);
     } catch (error) {
-      if (error instanceof Error && /duplicate column/i.test(error.message)) return;
-      throw error;
+      // node:sqlite ships SQLite >= 3.45 which supports DROP COLUMN; tolerate older builds by leaving the column in place.
+      if (!(error instanceof Error && /near "drop"/i.test(error.message))) throw error;
     }
   }
 
@@ -531,8 +506,20 @@ export class SqliteRepository implements LibraryRepository {
       read: count("where status = 'read'"),
       archived: count("where status = 'archived'"),
       favorite: count("where favorite = 1"),
-      sources
+      sources,
+      agentCategories: this.getAgentCategories()
     };
+  }
+
+  private getAgentCategories(): AgentContentCategorySummary[] {
+    const rows = this.db
+      .prepare("select agent_classification_json from saved_items where agent_classification_json is not null")
+      .all() as Array<{
+      agent_classification_json: string | null;
+    }>;
+    return collectAgentContentCategories(
+      rows.map((row) => ({ agentClassification: parseAgentClassification(row.agent_classification_json) }))
+    );
   }
 
   private putItem(item: LibraryItem): void {
@@ -566,18 +553,16 @@ export class SqliteRepository implements LibraryRepository {
           confidence,
           enrichment_state,
           enrichment_error,
-          capture_method,
           extractor,
-          source_access,
           source_message,
-          required_connector,
           recognition_version,
           recognized_at,
           recognition_duration_ms,
           recognition_timing_json,
           content_hash,
+          agent_classification_json,
           capture_input_json
-        ) values (${Array.from({ length: 37 }, () => "?").join(",")})
+        ) values (${Array.from({ length: 35 }, () => "?").join(",")})
         on conflict(id) do update set
           url = excluded.url,
           canonical_url = excluded.canonical_url,
@@ -604,16 +589,14 @@ export class SqliteRepository implements LibraryRepository {
           confidence = excluded.confidence,
           enrichment_state = excluded.enrichment_state,
           enrichment_error = excluded.enrichment_error,
-          capture_method = excluded.capture_method,
           extractor = excluded.extractor,
-          source_access = excluded.source_access,
           source_message = excluded.source_message,
-          required_connector = excluded.required_connector,
           recognition_version = excluded.recognition_version,
           recognized_at = excluded.recognized_at,
           recognition_duration_ms = excluded.recognition_duration_ms,
           recognition_timing_json = excluded.recognition_timing_json,
           content_hash = excluded.content_hash,
+          agent_classification_json = excluded.agent_classification_json,
           capture_input_json = excluded.capture_input_json
         `
       )
@@ -633,12 +616,28 @@ export class SqliteRepository implements LibraryRepository {
           summary,
           excerpt,
           readable_text,
+          source_name,
+          author,
+          url,
+          canonical_url,
           note,
           tags
-        ) values (?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
-      .run(item.id, item.title, item.summary, item.excerpt, item.readableText ?? "", item.note ?? "", item.tags.join(" "));
+      .run(
+        item.id,
+        item.title,
+        item.summary,
+        item.excerpt,
+        item.readableText ?? "",
+        item.sourceName,
+        item.author ?? "",
+        item.url,
+        item.canonicalUrl,
+        item.note ?? "",
+        item.tags.join(" ")
+      );
   }
 
   private putRecognitionJob(job: RecognitionJob): void {
@@ -673,6 +672,18 @@ export class SqliteRepository implements LibraryRepository {
       );
   }
 
+  // Keep capture-event retention aligned with the JSON adapter so diagnostics
+  // do not grow unbounded on long-running SQLite installs.
+  private trimCaptureEvents(): void {
+    this.db
+      .prepare(
+        `delete from capture_events where id in (
+           select id from capture_events order by created_at desc, id desc limit -1 offset ?
+         )`
+      )
+      .run(captureEventRetentionLimit);
+  }
+
   private putCaptureEvent(event: CaptureEvent): void {
     this.db
       .prepare(
@@ -683,7 +694,6 @@ export class SqliteRepository implements LibraryRepository {
           source_url,
           canonical_url,
           source_type,
-          capture_method,
           snapshot_bytes,
           result_state,
           recognition_version,
@@ -691,7 +701,7 @@ export class SqliteRepository implements LibraryRepository {
           content_hash,
           error,
           created_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -700,7 +710,6 @@ export class SqliteRepository implements LibraryRepository {
         event.sourceUrl,
         event.canonicalUrl ?? null,
         event.sourceType ?? null,
-        event.captureMethod,
         event.snapshotBytes,
         event.resultState,
         event.recognitionVersion ?? null,
@@ -752,16 +761,14 @@ function itemToParams(item: LibraryItem): Array<string | number | null> {
     item.confidence,
     item.enrichmentState,
     item.enrichmentError ?? null,
-    item.captureMethod ?? null,
     item.extractor ?? null,
-    item.sourceAccess ?? null,
     item.sourceMessage ?? null,
-    item.requiredConnector ?? null,
     item.recognitionVersion ?? null,
     item.recognizedAt ?? null,
     item.recognitionDurationMs ?? null,
     item.recognitionTiming ? JSON.stringify(item.recognitionTiming) : null,
     item.contentHash ?? null,
+    item.agentClassification ? JSON.stringify(item.agentClassification) : null,
     item.captureInput ? JSON.stringify(item.captureInput) : null
   ];
 }
@@ -794,18 +801,25 @@ function rowToItem(row: ItemRow): LibraryItem {
     confidence: row.confidence,
     enrichmentState: row.enrichment_state,
     enrichmentError: optionalString(row.enrichment_error),
-    captureMethod: row.capture_method ?? undefined,
     extractor: optionalString(row.extractor),
-    sourceAccess: row.source_access ?? undefined,
     sourceMessage: optionalString(row.source_message),
-    requiredConnector: row.required_connector ?? undefined,
     recognitionVersion: optionalNumber(row.recognition_version),
     recognizedAt: optionalString(row.recognized_at),
     recognitionDurationMs: optionalNumber(row.recognition_duration_ms),
     recognitionTiming: parseRecognitionTiming(row.recognition_timing_json),
     contentHash: optionalString(row.content_hash),
+    agentClassification: parseAgentClassification(row.agent_classification_json),
     captureInput: parseCaptureInput(row.capture_input_json)
   };
+}
+
+function parseAgentClassification(value: string | null): LibraryItem["agentClassification"] {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as LibraryItem["agentClassification"];
+  } catch {
+    return undefined;
+  }
 }
 
 function parseRecognitionTiming(value: string | null): LibraryItem["recognitionTiming"] {
@@ -844,10 +858,32 @@ function optionalNumber(value: number | null): number | undefined {
   return value ?? undefined;
 }
 
-function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params: Array<string | number> } {
+type SearchQuery = {
+  ftsQuery: string;
+  likePattern?: string;
+};
+
+function buildListFrom(search: SearchQuery | undefined): { withSql: string; joinSql: string; params: string[] } {
+  if (!search) {
+    return { withSql: "", joinSql: "", params: [] };
+  }
+
+  return {
+    withSql: `
+      with fts_matches as (
+        select item_id, bm25(saved_items_fts, 0.0, 8.0, 4.0, 3.0, 1.0, 5.0, 5.0, 2.0, 2.0, 3.0, 4.0) as rank
+        from saved_items_fts
+        where saved_items_fts match ?
+      )
+    `,
+    joinSql: "left join fts_matches on fts_matches.item_id = saved_items.id",
+    params: [search.ftsQuery]
+  };
+}
+
+function buildWhereClause(query: NormalizedLibraryQuery, search: SearchQuery | undefined): { sql: string; params: Array<string | number> } {
   const clauses: string[] = [];
   const params: Array<string | number> = [];
-  const ftsQuery = buildFtsQuery(query.q);
 
   if (query.filter === "favorite") {
     clauses.push("favorite = 1");
@@ -861,9 +897,33 @@ function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params:
     params.push(query.sourceType);
   }
 
-  if (ftsQuery) {
-    clauses.push("id in (select item_id from saved_items_fts where saved_items_fts match ?)");
-    params.push(ftsQuery);
+  if (query.agentCategoryId) {
+    clauses.push(
+      `(json_valid(agent_classification_json) and (json_extract(agent_classification_json, '$.classification.contentCategory.id') = ? or 'legacy-' || json_extract(agent_classification_json, '$.classification.primaryCategory') = ?))`
+    );
+    params.push(query.agentCategoryId, query.agentCategoryId);
+  }
+
+  if (search) {
+    const searchClauses = ["fts_matches.item_id is not null"];
+    if (search.likePattern) {
+      const likeColumns = [
+        "title",
+        "summary",
+        "excerpt",
+        "readable_text",
+        "source_name",
+        "author",
+        "url",
+        "canonical_url",
+        "note",
+        "tags_json",
+        "agent_classification_json"
+      ];
+      searchClauses.push(...likeColumns.map((column) => `${column} like ? escape '\\'`));
+      params.push(...likeColumns.map(() => search.likePattern!));
+    }
+    clauses.push(`(${searchClauses.join(" or ")})`);
   }
 
   return {
@@ -872,10 +932,34 @@ function buildWhereClause(query: NormalizedLibraryQuery): { sql: string; params:
   };
 }
 
-function buildFtsQuery(value: string | undefined): string | undefined {
+function buildOrderBy(search: SearchQuery | undefined): string {
+  if (!search) {
+    return "order by saved_items.saved_at desc";
+  }
+
+  return "order by case when fts_matches.item_id is null then 1 else 0 end, fts_matches.rank, saved_items.saved_at desc";
+}
+
+function buildSearchQuery(value: string | undefined): SearchQuery | undefined {
   const tokens = value?.match(/[\p{L}\p{N}]+/gu)?.slice(0, 8);
   if (!tokens?.length) return undefined;
-  return tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(" AND ");
+  return {
+    ftsQuery: tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(" AND "),
+    likePattern: shouldUseLikeFallback(value, tokens) ? `%${escapeLikePattern(value ?? "")}%` : undefined
+  };
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+function shouldUseLikeFallback(value: string | undefined, tokens: string[]): boolean {
+  const normalized = value?.trim() ?? "";
+  return hasNonAsciiCharacter(normalized) || (tokens.length === 1 && normalized.length >= 4);
+}
+
+function hasNonAsciiCharacter(value: string): boolean {
+  return [...value].some((character) => character.charCodeAt(0) > 127);
 }
 
 function emptySourceCounts(): Record<SourceType, number> {
@@ -905,31 +989,6 @@ function rowToRecognitionJob(row: RecognitionJobRow): RecognitionJob {
   };
 }
 
-function rowToConnector(row: ConnectorRow): ConnectorRecord {
-  return {
-    provider: row.provider,
-    connectionState: row.connection_state,
-    accountLabel: optionalString(row.account_label),
-    connectedAt: optionalString(row.connected_at),
-    lastSyncAt: optionalString(row.last_sync_at),
-    lastError: optionalString(row.last_error),
-    updatedAt: row.updated_at
-  };
-}
-
-function rowToConnectorCredential(row: ConnectorCredentialRow): ConnectorCredentialRecord {
-  return {
-    provider: row.provider,
-    accessTokenCiphertext: row.access_token_ciphertext,
-    refreshTokenCiphertext: optionalString(row.refresh_token_ciphertext),
-    tokenType: row.token_type,
-    scope: optionalString(row.scope),
-    accessTokenExpiresAt: optionalString(row.access_token_expires_at),
-    refreshTokenExpiresAt: optionalString(row.refresh_token_expires_at),
-    updatedAt: row.updated_at
-  };
-}
-
 function rowToCaptureEvent(row: CaptureEventRow): CaptureEvent {
   return {
     id: row.id,
@@ -937,7 +996,6 @@ function rowToCaptureEvent(row: CaptureEventRow): CaptureEvent {
     sourceUrl: row.source_url,
     canonicalUrl: optionalString(row.canonical_url),
     sourceType: row.source_type ?? undefined,
-    captureMethod: row.capture_method,
     snapshotBytes: row.snapshot_bytes,
     resultState: row.result_state,
     recognitionVersion: optionalNumber(row.recognition_version),

@@ -1,10 +1,10 @@
-# Huntter Harness v0
+# Hunter Harness v0
 
 Harness v0 is the repository-local system that lets coding agents work with less guessing and more proof. It is deliberately small: files, scripts, tests, and evidence before orchestration platforms.
 
 ## Five Subsystems
 
-| Subsystem    | Huntter Asset                                                                  | Purpose                                                                                           |
+| Subsystem    | Hunter Asset                                                                   | Purpose                                                                                           |
 | ------------ | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | Instructions | `AGENTS.md`, `docs/INDEX.md`, `CONTEXT.md`                                     | Tell agents what to read, what rules matter, and where deeper facts live.                         |
 | State        | `progress.md`, `feature-list.json`                                             | Record current facts, completed slices, blocked work, and next steps outside the chat transcript. |
@@ -35,10 +35,10 @@ Each completed feature should include evidence with:
 
 ## First Golden Journeys
 
-- Public URL capture reaches `ready` with canonical content.
-- Feishu URL-only capture reaches `needs_connector`.
+- Generic web snapshot capture reaches `ready` with canonical content.
 - Feishu browser snapshot reaches `ready` or `partial` based on visible content quality.
-- X oEmbed, selected-text, and browser-snapshot fallbacks remain deterministic and disclose connector limits.
+- X selected-text and browser-snapshot fallbacks remain deterministic, with honest `partial`/`failed` states when the snapshot is shallow.
+- `POST /api/items` without a snapshot returns 400.
 - Recognition refresh preserves user-owned fields and replaces recognition output.
 - Browser UI journey covers save, manual Reload, extension-style snapshot capture, search, favorite, status change, and manual Refresh.
 

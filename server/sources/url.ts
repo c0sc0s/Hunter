@@ -58,14 +58,6 @@ export function absolutize(value: string | undefined | null, baseUrl: string): s
   }
 }
 
-export function isUsefulImageUrl(value: string | undefined): value is string {
-  if (!value) return false;
-  if (value.startsWith("data:")) return false;
-  if (value.includes("sprite")) return false;
-  if (value.includes("favicon")) return false;
-  return /^https?:\/\//.test(value);
-}
-
 const trackingSearchParams = new Set([
   "_hsenc",
   "_hsmi",

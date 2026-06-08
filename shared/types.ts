@@ -1,20 +1,10 @@
 export type SourceType = "article" | "post" | "tweet" | "feishu" | "video" | "pdf" | "other";
 
-export type ConnectorProvider = "feishu" | "x";
-
-export type ConnectorAvailability = "planned" | "available";
-
-export type ConnectorConnectionState = "not_connected" | "connected" | "error" | "disabled";
-
 export type ItemStatus = "unread" | "reading" | "read" | "archived";
 
 export type LibraryFilter = "all" | ItemStatus | "favorite";
 
-export type EnrichmentState = "processing" | "ready" | "partial" | "needs_connector" | "failed";
-
-export type CaptureMethod = "url_fetch" | "extension_snapshot" | "source_adapter" | "connector";
-
-export type SourceAccess = "public" | "browser_snapshot" | "requires_auth" | "connector_required";
+export type EnrichmentState = "processing" | "ready" | "partial" | "failed";
 
 export type RecognitionTiming = {
   totalMs: number;
@@ -23,7 +13,99 @@ export type RecognitionTiming = {
   itemBuildMs: number;
 };
 
-export type LibraryItem = {
+export type AgentCategory =
+  | "technical"
+  | "product"
+  | "business"
+  | "research"
+  | "news"
+  | "opinion"
+  | "tutorial"
+  | "reference"
+  | "social"
+  | "media"
+  | "other";
+
+export type AgentIntent = "read_later" | "learn" | "reference" | "follow_up" | "summarize" | "watch" | "share" | "other";
+
+export type AgentContentCategory = {
+  id: string;
+  label: string;
+  description?: string;
+  source: "existing" | "new";
+};
+
+export type AgentContentCategorySummary = {
+  id: string;
+  label: string;
+  description?: string;
+  count: number;
+};
+
+export type AgentClassification = {
+  primaryCategory: AgentCategory;
+  contentCategory: AgentContentCategory;
+  intent: AgentIntent;
+  topics: string[];
+  summary: string;
+  keyPoints: string[];
+  confidence: number;
+  language?: string;
+  needsFollowUp: boolean;
+};
+
+export type AgentLlmProvider = "ollama" | "deepseek" | "openai-compatible";
+
+export type AgentClassificationResult = {
+  provider: AgentLlmProvider;
+  model: string;
+  generatedAt: string;
+  contentHash?: string;
+  classification: AgentClassification;
+};
+
+export type AgentLlmSettings = {
+  provider: AgentLlmProvider;
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  updatedAt?: string;
+};
+
+export type UpdateAgentLlmSettingsInput = {
+  provider?: AgentLlmProvider;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
+};
+
+export type ImageCandidate =
+  | string
+  | {
+      url: string;
+      score?: number;
+      source?: string;
+      width?: number;
+      height?: number;
+      alt?: string;
+      context?: string;
+      inContentRoot?: boolean;
+      order?: number;
+    };
+
+export type PageSnapshotContentCandidate = {
+  kind: "focused_root" | "content_root" | "body";
+  text?: string;
+  html?: string;
+  selector?: string;
+  score?: number;
+};
+
+// PublicLibraryItem is what the API returns and what the web client consumes.
+// It deliberately omits storage-only fields so the HTTP boundary is enforced at
+// compile time, not just by toPublicItem() at runtime.
+export type PublicLibraryItem = {
   id: string;
   url: string;
   canonicalUrl: string;
@@ -50,16 +132,19 @@ export type LibraryItem = {
   confidence: number;
   enrichmentState: EnrichmentState;
   enrichmentError?: string;
-  captureMethod?: CaptureMethod;
   extractor?: string;
-  sourceAccess?: SourceAccess;
   sourceMessage?: string;
-  requiredConnector?: ConnectorProvider;
   recognitionVersion?: number;
   recognizedAt?: string;
   recognitionDurationMs?: number;
   recognitionTiming?: RecognitionTiming;
   contentHash?: string;
+  agentClassification?: AgentClassificationResult;
+};
+
+// LibraryItem is the storage-facing shape. It extends PublicLibraryItem with
+// the truncated captureInput blob used for refresh/reprocessing.
+export type LibraryItem = PublicLibraryItem & {
   captureInput?: CreateItemInput;
 };
 
@@ -73,7 +158,8 @@ export type PageSnapshot = {
   excerpt?: string;
   siteName?: string;
   favicon?: string;
-  imageCandidates?: string[];
+  imageCandidates?: ImageCandidate[];
+  contentCandidates?: PageSnapshotContentCandidate[];
   publishedAt?: string;
 };
 
@@ -83,7 +169,7 @@ export type CreateItemInput = {
   sourceType?: SourceType;
   note?: string;
   tags?: string[];
-  snapshot?: PageSnapshot;
+  snapshot: PageSnapshot;
 };
 
 export type UpdateItemInput = Partial<Pick<LibraryItem, "status" | "favorite" | "tags" | "note">>;
@@ -96,11 +182,13 @@ export type LibraryStats = {
   archived: number;
   favorite: number;
   sources: Record<SourceType, number>;
+  agentCategories: AgentContentCategorySummary[];
 };
 
 export type LibraryQuery = {
   filter?: LibraryFilter;
   sourceType?: SourceType;
+  agentCategoryId?: string;
   q?: string;
   limit?: number;
   offset?: number;
@@ -114,9 +202,17 @@ export type LibraryPage = {
 };
 
 export type LibraryResponse = {
-  items: LibraryItem[];
+  items: PublicLibraryItem[];
   stats: LibraryStats;
   page: LibraryPage;
+};
+
+export type AgentIncrementalClassificationResponse = {
+  attempted: number;
+  classified: number;
+  skipped: number;
+  items: PublicLibraryItem[];
+  categories: AgentContentCategorySummary[];
 };
 
 export type CaptureEvent = {
@@ -125,7 +221,6 @@ export type CaptureEvent = {
   sourceUrl: string;
   canonicalUrl?: string;
   sourceType?: SourceType;
-  captureMethod: CaptureMethod;
   snapshotBytes: number;
   resultState: EnrichmentState;
   recognitionVersion?: number;
@@ -137,62 +232,4 @@ export type CaptureEvent = {
 
 export type CaptureEventsResponse = {
   events: CaptureEvent[];
-};
-
-export type ConnectorDefinition = {
-  provider: ConnectorProvider;
-  label: string;
-  sourceTypes: SourceType[];
-  authMode: "oauth";
-  availability: ConnectorAvailability;
-  capabilities: string[];
-  setupMessage: string;
-};
-
-export type ConnectorRecord = {
-  provider: ConnectorProvider;
-  connectionState: ConnectorConnectionState;
-  accountLabel?: string;
-  connectedAt?: string;
-  lastSyncAt?: string;
-  lastError?: string;
-  updatedAt: string;
-};
-
-export type ConnectorView = ConnectorDefinition & {
-  connectionState: ConnectorConnectionState;
-  accountLabel?: string;
-  connectedAt?: string;
-  lastSyncAt?: string;
-  lastError?: string;
-  updatedAt?: string;
-};
-
-export type ConnectorsResponse = {
-  connectors: ConnectorView[];
-};
-
-export type ConnectorUpdateInput = Partial<Pick<ConnectorRecord, "connectionState" | "accountLabel" | "lastSyncAt" | "lastError">>;
-
-export type ConnectorMutationResponse = {
-  connector: ConnectorView;
-};
-
-export type ConnectorSyncResponse = {
-  connector: ConnectorView;
-  imported?: number;
-  skipped?: number;
-  failed?: number;
-  message?: string;
-  error?: string;
-  reason?: "not_connected" | "missing_credentials" | "not_available" | "not_implemented" | "sync_failed";
-};
-
-export type ConnectorOAuthStartResponse = {
-  provider: ConnectorProvider;
-  authorizationUrl: string;
-  redirectUri: string;
-  scopes: string[];
-  state: string;
-  expiresAt: string;
 };

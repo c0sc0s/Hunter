@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hunter — Brand preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #0c0a09;
+        --bg-elev: #1c1917;
+        --fg: #fafaf9;
+        --fg-muted: #a8a29e;
+        --border: rgba(255, 255, 255, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial;
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        padding: 48px 56px 24px;
+        border-bottom: 1px solid var(--border);
+      }
+      header h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        letter-spacing: -0.01em;
+        font-weight: 700;
+      }
+      header p {
+        margin: 0;
+        color: var(--fg-muted);
+        font-size: 14px;
+      }
+      main {
+        padding: 32px 56px 96px;
+      }
+      section {
+        margin-top: 56px;
+      }
+      section h2 {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+        margin: 0 0 20px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: flex-end;
+      }
+      .tile {
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 28px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        min-width: 180px;
+      }
+      .tile.light {
+        background: #fafaf9;
+        color: #1c1917;
+        border-color: rgba(0, 0, 0, 0.08);
+      }
+      .tile-label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--fg-muted);
+        font-feature-settings: "tnum";
+      }
+      .tile.light .tile-label {
+        color: #78716c;
+      }
+      img,
+      svg {
+        display: block;
+      }
+      .grid-context {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+      }
+      .context {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        background: var(--bg-elev);
+      }
+      .context-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .context-bar img {
+        height: 28px;
+        width: 28px;
+        border-radius: 7px;
+      }
+      .context-bar .name {
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+      }
+      .context-body {
+        padding: 28px;
+        display: grid;
+        place-items: center;
+        min-height: 160px;
+      }
+      .home-mock {
+        background: linear-gradient(135deg, #1c1917, #292524);
+        padding: 32px;
+        border-radius: 20px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+      }
+      .home-mock .ico {
+        aspect-ratio: 1 / 1;
+        border-radius: 18px;
+        background: #44403c;
+        display: grid;
+        place-items: center;
+      }
+      .home-mock .ico.live {
+        background: transparent;
+        padding: 0;
+        overflow: hidden;
+      }
+      .home-mock .ico.live img {
+        width: 100%;
+        height: 100%;
+      }
+      .header-mock {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        background: #fafaf9;
+        color: #1c1917;
+        border-radius: 14px;
+      }
+      .header-mock img {
+        height: 36px;
+      }
+      .header-mock .title {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .browser-mock {
+        background: #fafaf9;
+        color: #1c1917;
+        border-radius: 14px;
+        padding: 14px;
+      }
+      .browser-mock .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: #fff;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .browser-mock .tab img {
+        height: 18px;
+        width: 18px;
+      }
+      .swatches {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .swatch {
+        width: 96px;
+        text-align: center;
+        font-size: 11px;
+        color: var(--fg-muted);
+      }
+      .swatch .chip {
+        width: 96px;
+        height: 64px;
+        border-radius: 12px;
+        margin-bottom: 8px;
+        border: 1px solid var(--border);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .secondary-note {
+        color: var(--fg-muted);
+        font-size: 13px;
+        margin-top: 12px;
+        max-width: 640px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Hunter — Brand preview</h1>
+      <p>Minimal · Cream H + bookmark fold · Ink ground</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>App icon</h2>
+        <div class="row">
+          <div class="tile">
+            <img src="hunter-app-icon.svg" width="200" height="200" alt="" />
+            <div class="tile-label">200 px</div>
+          </div>
+          <div class="tile">
+            <img src="hunter-app-icon.svg" width="128" height="128" alt="" />
+            <div class="tile-label">128 px</div>
+          </div>
+          <div class="tile">
+            <img src="hunter-app-icon.svg" width="64" height="64" alt="" />
+            <div class="tile-label">64 px</div>
+          </div>
+          <div class="tile">
+            <img src="hunter-app-icon.svg" width="32" height="32" alt="" />
+            <div class="tile-label">32 px</div>
+          </div>
+          <div class="tile">
+            <img src="hunter-app-icon.svg" width="16" height="16" alt="" />
+            <div class="tile-label">16 px (favicon)</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Mark — adapts via currentColor</h2>
+        <div class="row">
+          <div class="tile">
+            <div style="color: #fffbeb; line-height: 0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="160" height="160" fill="currentColor">
+                <rect x="32" y="0" width="80" height="320" rx="40" ry="40" />
+                <rect x="96" y="136" width="128" height="48" />
+                <path d="M 208 40 A 40 40 0 0 1 248 0 A 40 40 0 0 1 288 40 L 288 320 L 248 280 L 208 320 Z" />
+              </svg>
+            </div>
+            <div class="tile-label">cream / on ink</div>
+          </div>
+          <div class="tile light">
+            <div style="color: #1c1917; line-height: 0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="160" height="160" fill="currentColor">
+                <rect x="32" y="0" width="80" height="320" rx="40" ry="40" />
+                <rect x="96" y="136" width="128" height="48" />
+                <path d="M 208 40 A 40 40 0 0 1 248 0 A 40 40 0 0 1 288 40 L 288 320 L 248 280 L 208 320 Z" />
+              </svg>
+            </div>
+            <div class="tile-label">ink / on cream</div>
+          </div>
+          <div class="tile" style="background: #292524">
+            <div style="color: #d4d4d4; line-height: 0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="160" height="160" fill="currentColor">
+                <rect x="32" y="0" width="80" height="320" rx="40" ry="40" />
+                <rect x="96" y="136" width="128" height="48" />
+                <path d="M 208 40 A 40 40 0 0 1 248 0 A 40 40 0 0 1 288 40 L 288 320 L 248 280 L 208 320 Z" />
+              </svg>
+            </div>
+            <div class="tile-label">muted / on stone</div>
+          </div>
+        </div>
+        <p class="secondary-note">
+          The mark uses <code>fill="currentColor"</code>, so dropping the SVG inline and setting CSS <code>color</code> on the parent
+          recolors it for any surface.
+        </p>
+      </section>
+
+      <section>
+        <h2>Wordmark</h2>
+        <div class="row">
+          <div class="tile light" style="width: 100%; align-items: flex-start">
+            <img src="hunter-wordmark.svg" height="80" alt="Hunter" />
+          </div>
+          <div class="tile" style="width: 100%; align-items: flex-start">
+            <img src="hunter-wordmark-cream.svg" height="80" alt="Hunter" />
+          </div>
+        </div>
+        <p class="secondary-note">
+          Two flavors: <code>hunter-wordmark.svg</code> (ink, default) and <code>hunter-wordmark-cream.svg</code> (cream, for dark
+          surfaces). The source mark also uses <code>currentColor</code> if you'd rather inline it and drive color via CSS.
+        </p>
+      </section>
+
+      <section>
+        <h2>In context</h2>
+        <div class="grid-context">
+          <div class="context">
+            <div class="context-bar">
+              <img src="hunter-app-icon.svg" alt="" />
+              <div class="name">Hunter</div>
+            </div>
+            <div class="context-body">
+              <div class="header-mock">
+                <img src="hunter-wordmark.svg" alt="Hunter" />
+              </div>
+            </div>
+          </div>
+
+          <div class="context">
+            <div class="context-bar">
+              <img src="hunter-app-icon.svg" alt="" />
+              <div class="name">Browser tab</div>
+            </div>
+            <div class="context-body">
+              <div class="browser-mock">
+                <span class="tab"><img src="hunter-app-icon.svg" alt="" /> Library · Hunter</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="context">
+            <div class="context-bar">
+              <img src="hunter-app-icon.svg" alt="" />
+              <div class="name">Home-screen grid</div>
+            </div>
+            <div class="context-body">
+              <div class="home-mock">
+                <div class="ico"></div>
+                <div class="ico"></div>
+                <div class="ico live"><img src="hunter-app-icon.svg" alt="Hunter" /></div>
+                <div class="ico"></div>
+                <div class="ico"></div>
+                <div class="ico"></div>
+                <div class="ico"></div>
+                <div class="ico"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Palette</h2>
+        <div class="swatches">
+          <div class="swatch">
+            <div class="chip" style="background: #1c1917"></div>
+            #1C1917 — Ink
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: #292524"></div>
+            #292524 — Stone 800
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: #a8a29e"></div>
+            #A8A29E — Muted
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: #fffbeb"></div>
+            #FFFBEB — Cream
+          </div>
+          <div class="swatch">
+            <div class="chip" style="background: #fafaf9"></div>
+            #FAFAF9 — Bone
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Archived — color variant (for marketing only)</h2>
+        <div class="row">
+          <div class="tile">
+            <img src="hunter-app-icon-color.svg" width="128" height="128" alt="" />
+            <div class="tile-label">amber gradient</div>
+          </div>
+        </div>
+        <p class="secondary-note">
+          The amber-gradient version still lives at <code>hunter-app-icon-color.svg</code> / <code>hunter-mark-color.svg</code> /
+          <code>hunter-wordmark-color.svg</code> in case you need a louder treatment for marketing surfaces.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

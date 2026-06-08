@@ -1,8 +1,8 @@
-# Huntter Product Design
+# Hunter Product Design
 
 ## Product Promise
 
-Huntter is an information-flow inbox for things worth reading later: articles, forum posts, X posts, research notes, newsletters, and any URL a user meets while browsing.
+Hunter is an information-flow inbox for things worth reading later: articles, forum posts, X posts, research notes, newsletters, and any URL a user meets while browsing.
 
 The product is not a prettier bookmarks folder. It is a calm workspace for turning saved links into understood, organized, and revisitable knowledge.
 
@@ -15,7 +15,7 @@ The product is not a prettier bookmarks folder. It is a calm workspace for turni
 ## Core Workflow
 
 1. User clicks the browser extension on a page.
-2. Huntter captures URL, title, favicon, readable text, image candidates, selected text, and optional note/tags.
+2. Hunter captures URL, title, favicon, readable text, image candidates, selected text, and optional note/tags.
 3. Backend stores the item immediately and recognizes content asynchronously.
 4. Web client shows the item in an inbox with cover image, summary, tags, source, and read state.
 5. User triages the item: read, keep unread, archive, favorite, tag, or delete.

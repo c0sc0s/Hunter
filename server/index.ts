@@ -1,57 +1,88 @@
+import { mkdirSync } from "node:fs";
 import cors from "cors";
 import express from "express";
 import { z } from "zod";
 import type {
+  AgentIncrementalClassificationResponse,
+  AgentLlmProvider,
   CaptureEventsResponse,
-  ConnectorMutationResponse,
-  ConnectorOAuthStartResponse,
-  ConnectorProvider,
-  ConnectorSyncResponse,
-  ConnectorUpdateInput,
   CreateItemInput,
   LibraryItem,
+  PublicLibraryItem,
   UpdateItemInput
 } from "../shared/types";
+import { mergeAgentContentCategory } from "./agents/contentCategories";
+import { classifyLibraryItem } from "./agents/contentClassifier";
+import { getLocalLlmStatus, getResolvedLocalLlmSettings, LocalLlmError } from "./agents/localLlm";
+import { readAgentLlmSettings, toPublicAgentLlmSettings, updateAgentLlmSettings } from "./agents/llmSettings";
 import { buildCaptureEvent } from "./captureEvents";
 import { toRecognitionInput, toRefreshInput } from "./captureInput";
-import { completeFeishuOAuth, ConnectorConfigError, startFeishuOAuth } from "./connectorAuth/feishuOAuth";
-import { OAuthStateError } from "./connectorAuth/oauthState";
-import { buildConnectorRecord, buildDisconnectedConnectorRecord, getConnectorDefinition, isConnectorProvider } from "./connectors";
-import { syncFeishuConnector } from "./connectorImport/feishuImport";
+import { resolveDataDir } from "./dataDir";
+import { acquireDataDirLock, DataDirInUseError } from "./dataDirLock";
 import { listSourceAdapters } from "./extract";
 import { buildItem, buildQueuedItem } from "./itemBuilder";
+import { bindAndAnnounce } from "./listen";
 import { libraryRepository } from "./repository";
 import { drainRecognitionJobs, enqueueRecognition } from "./recognitionJobs";
 
 export const app = express();
-const port = Number(process.env.PORT ?? 4317);
+
+const apiStartedAt = new Date().toISOString();
+const apiOwner = process.env.HUNTER_API_OWNER?.trim() || "standalone";
 
 const sourceTypeSchema = z.enum(["article", "post", "tweet", "feishu", "video", "pdf", "other"]);
 const statusSchema = z.enum(["unread", "reading", "read", "archived"]);
-const connectorStateSchema = z.enum(["not_connected", "connected", "error", "disabled"]);
+const agentLlmProviderSchema = z.enum(["ollama", "deepseek", "openai-compatible"]) satisfies z.ZodType<AgentLlmProvider>;
+const imageCandidateSchema = z.union([
+  z.string(),
+  z.object({
+    url: z.string(),
+    score: z.number().optional(),
+    source: z.string().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    alt: z.string().optional(),
+    context: z.string().optional(),
+    inContentRoot: z.boolean().optional(),
+    order: z.number().optional()
+  })
+]);
 
-const createItemSchema = z.object({
-  url: z.string().url(),
-  title: z.string().optional(),
-  sourceType: sourceTypeSchema.optional(),
-  note: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  snapshot: z
-    .object({
-      title: z.string().optional(),
-      url: z.string().url(),
-      canonicalUrl: z.string().url().optional(),
-      html: z.string().optional(),
-      textContent: z.string().optional(),
-      selectedText: z.string().optional(),
-      excerpt: z.string().optional(),
-      siteName: z.string().optional(),
-      favicon: z.string().optional(),
-      imageCandidates: z.array(z.string()).optional(),
-      publishedAt: z.string().optional()
-    })
-    .optional()
+const contentCandidateSchema = z.object({
+  kind: z.enum(["focused_root", "content_root", "body"]),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  selector: z.string().optional(),
+  score: z.number().optional()
 });
+
+const snapshotSchema = z.object({
+  title: z.string().optional(),
+  url: z.string().url(),
+  canonicalUrl: z.string().url().optional(),
+  html: z.string().optional(),
+  textContent: z.string().optional(),
+  selectedText: z.string().optional(),
+  excerpt: z.string().optional(),
+  siteName: z.string().optional(),
+  favicon: z.string().optional(),
+  imageCandidates: z.array(imageCandidateSchema).optional(),
+  contentCandidates: z.array(contentCandidateSchema).optional(),
+  publishedAt: z.string().optional()
+});
+
+const createItemSchema = z
+  .object({
+    url: z.string().url(),
+    title: z.string().optional(),
+    sourceType: sourceTypeSchema.optional(),
+    note: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    snapshot: snapshotSchema
+  })
+  // Normalize at the boundary so handlers consume already-truncated capture
+  // input; downstream code does not need to know about size limits.
+  .transform((input): CreateItemInput => toRecognitionInput(input));
 
 const updateItemSchema = z.object({
   status: statusSchema.optional(),
@@ -64,6 +95,7 @@ const listItemsQuerySchema = z.object({
   q: z.string().optional(),
   filter: z.enum(["all", "unread", "reading", "read", "archived", "favorite"]).optional(),
   sourceType: sourceTypeSchema.optional(),
+  agentCategoryId: z.string().trim().min(1).max(80).optional(),
   limit: z.coerce.number().int().min(1).max(120).optional(),
   offset: z.coerce.number().int().min(0).optional()
 });
@@ -72,169 +104,116 @@ const captureEventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional()
 });
 
-const connectorUpdateSchema = z
+const agentLlmSettingsSchema = z.object({
+  provider: agentLlmProviderSchema.optional(),
+  baseUrl: z.string().trim().url().max(500).optional(),
+  model: z.string().trim().min(1).max(120).optional(),
+  apiKey: z.string().trim().max(400).optional(),
+  clearApiKey: z.boolean().optional()
+});
+
+const classifyMissingSchema = z
   .object({
-    connectionState: connectorStateSchema.optional(),
-    accountLabel: z.string().trim().min(1).max(120).optional(),
-    lastSyncAt: z.string().datetime().optional(),
-    lastError: z.string().trim().min(1).max(300).optional()
+    limit: z.coerce.number().int().min(1).max(12).optional()
   })
-  .strict();
+  .optional();
 
 app.use(cors());
-app.use(express.json({ limit: "4mb" }));
+// Capture payloads are truncated to ~350KB by captureInputLimits; 1MB leaves
+// generous headroom for transport overhead without exposing the API to large
+// snapshots from non-extension clients.
+app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_request, response) => {
-  response.json({ ok: true, service: "huntter-api" });
+  response.json({
+    ok: true,
+    service: "hunter-api",
+    owner: apiOwner,
+    startedAt: apiStartedAt,
+    pid: process.pid
+  });
 });
 
 app.get("/api/sources", (_request, response) => {
   response.json({ sources: listSourceAdapters() });
 });
 
-app.get("/api/connectors", async (_request, response, next) => {
+app.get("/api/agent/local-llm", async (_request, response, next) => {
   try {
-    response.json({ connectors: await libraryRepository.listConnectors() });
+    response.json(await getLocalLlmStatus());
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/connectors/:provider", async (request, response, next) => {
+app.get("/api/agent/settings", async (_request, response, next) => {
   try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
-
-    response.json(await getConnectorView(provider));
+    const settings = await readAgentLlmSettings();
+    response.json(toPublicAgentLlmSettings(settings, getResolvedLocalLlmSettings()));
   } catch (error) {
     next(error);
   }
 });
 
-app.patch("/api/connectors/:provider", async (request, response, next) => {
+app.patch("/api/agent/settings", async (request, response, next) => {
   try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
-
-    const input = connectorUpdateSchema.parse(request.body) satisfies ConnectorUpdateInput;
-    const previous = await getConnectorView(provider);
-    const record = buildConnectorRecord(provider, input, previous);
-    await libraryRepository.upsertConnector(record);
-
-    const body: ConnectorMutationResponse = { connector: await getConnectorView(provider) };
-    response.json(body);
+    const input = agentLlmSettingsSchema.parse(request.body);
+    const settings = await updateAgentLlmSettings(input);
+    response.json(toPublicAgentLlmSettings(settings, getResolvedLocalLlmSettings()));
   } catch (error) {
     next(error);
   }
 });
 
-app.delete("/api/connectors/:provider", async (request, response, next) => {
+app.post("/api/agent/items/:id/classify", async (request, response, next) => {
   try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
+    const item = await libraryRepository.findById(request.params.id);
+    if (!item) {
+      response.status(404).json({ error: "Item not found" });
+      return;
+    }
 
-    await libraryRepository.deleteConnectorCredential(provider);
-    await libraryRepository.upsertConnector(buildDisconnectedConnectorRecord(provider));
-    const body: ConnectorMutationResponse = { connector: await getConnectorView(provider) };
-    response.json(body);
+    const classification = await classifyLibraryItem(item, { existingCategories: await libraryRepository.listAgentCategories() });
+    const updated = await libraryRepository.setAgentClassification(item.id, classification);
+    if (!updated) {
+      response.status(404).json({ error: "Item not found" });
+      return;
+    }
+
+    response.json(toPublicItem(updated));
   } catch (error) {
+    if (sendLocalLlmError(error, response)) return;
     next(error);
   }
 });
 
-app.post("/api/connectors/:provider/oauth/start", async (request, response, next) => {
+app.post("/api/agent/items/classify-missing", async (request, response, next) => {
   try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
+    const input = classifyMissingSchema.parse(request.body);
+    const limit = input?.limit ?? 6;
+    const candidates = await libraryRepository.listAgentClassificationCandidates(limit);
+    let categories = await libraryRepository.listAgentCategories();
+    const items: PublicLibraryItem[] = [];
 
-    if (provider !== "feishu") {
-      response.status(501).json({ error: `${getConnectorDefinition(provider).label} OAuth is not implemented yet.` });
-      return;
+    for (const item of candidates) {
+      const classification = await classifyLibraryItem(item, { existingCategories: categories });
+      const updated = await libraryRepository.setAgentClassification(item.id, classification);
+      if (!updated) continue;
+
+      categories = mergeAgentContentCategory(categories, classification.classification.contentCategory);
+      items.push(toPublicItem(updated));
     }
 
-    const body: ConnectorOAuthStartResponse = startFeishuOAuth(requestOrigin(request));
-    response.json(body);
-  } catch (error) {
-    if (error instanceof ConnectorConfigError) {
-      response.status(409).json({ error: error.message, missing: error.missing });
-      return;
-    }
-    if (error instanceof OAuthStateError) {
-      response.status(400).json({ error: error.message });
-      return;
-    }
-    next(error);
-  }
-});
-
-app.get("/api/connectors/:provider/oauth/callback", async (request, response, next) => {
-  try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
-
-    if (provider !== "feishu") {
-      response.status(501).json({ error: `${getConnectorDefinition(provider).label} OAuth is not implemented yet.` });
-      return;
-    }
-
-    const code = z.string().min(1).parse(request.query.code);
-    const state = z.string().min(1).parse(request.query.state);
-    const body = await completeFeishuOAuth(code, state, libraryRepository);
-    response.json(body);
-  } catch (error) {
-    if (error instanceof ConnectorConfigError) {
-      response.status(409).json({ error: error.message, missing: error.missing });
-      return;
-    }
-    if (error instanceof OAuthStateError) {
-      response.status(400).json({ error: error.message });
-      return;
-    }
-    next(error);
-  }
-});
-
-app.post("/api/connectors/:provider/sync", async (request, response, next) => {
-  try {
-    const provider = parseConnectorProvider(request.params.provider, response);
-    if (!provider) return;
-
-    const connector = await getConnectorView(provider);
-    if (connector.connectionState !== "connected") {
-      const body: ConnectorSyncResponse = {
-        connector,
-        error: `${connector.label} is not connected.`,
-        reason: "not_connected"
-      };
-      response.status(409).json(body);
-      return;
-    }
-
-    if (connector.availability !== "available") {
-      const body: ConnectorSyncResponse = {
-        connector,
-        error: `${connector.label} sync is not available yet. ${connector.setupMessage}`,
-        reason: "not_available"
-      };
-      response.status(501).json(body);
-      return;
-    }
-
-    if (provider === "feishu") {
-      const body = await syncFeishuConnector(libraryRepository);
-      const status = body.reason === "missing_credentials" || body.reason === "not_connected" ? 409 : 200;
-      response.status(status).json(body);
-      return;
-    }
-
-    const definition = getConnectorDefinition(provider);
-    const body: ConnectorSyncResponse = {
-      connector,
-      error: `${definition.label} sync handler is not implemented.`,
-      reason: "not_implemented"
+    const body: AgentIncrementalClassificationResponse = {
+      attempted: candidates.length,
+      classified: items.length,
+      skipped: 0,
+      items,
+      categories
     };
-    response.status(501).json(body);
+    response.json(body);
   } catch (error) {
+    if (sendLocalLlmError(error, response)) return;
     next(error);
   }
 });
@@ -313,14 +292,23 @@ app.post("/api/items/:id/enrich", async (request, response, next) => {
 
     const input = toRefreshInput(item);
 
-    const enriched = await buildItem(input, item.id, item.savedAt);
-    const updated = await libraryRepository.replaceRecognitionResult(item.id, enriched, input);
+    let updated: LibraryItem | undefined;
+    let recognitionError: unknown;
+    try {
+      const enriched = await buildItem(input, item.id, item.savedAt);
+      updated = await libraryRepository.replaceRecognitionResult(item.id, enriched, input);
+    } catch (error) {
+      recognitionError = error;
+      await libraryRepository.markRecognitionFailed(item.id, error);
+      updated = await libraryRepository.findById(item.id);
+    }
+
     if (!updated) {
       response.status(404).json({ error: "Item not found" });
       return;
     }
 
-    await libraryRepository.recordCaptureEvent(buildCaptureEvent({ input, item: updated }));
+    await libraryRepository.recordCaptureEvent(buildCaptureEvent({ input, item: updated, error: recognitionError }));
     response.json(toPublicItem(updated));
   } catch (error) {
     next(error);
@@ -334,47 +322,57 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   }
 
   console.error(error);
-  response.status(500).json({ error: error instanceof Error ? error.message : "Unknown server error" });
+  // Do not leak raw error messages to clients; log full context server-side and
+  // return a stable error body.
+  response.status(500).json({ error: "Internal server error" });
 });
 
-if (process.env.HUNTTER_DISABLE_LISTEN !== "true") {
-  app.listen(port, "127.0.0.1", () => {
-    console.log(`Huntter API listening on http://127.0.0.1:${port}`);
+if (process.env.HUNTER_DISABLE_LISTEN !== "true") {
+  // Acquire the data-directory lock BEFORE binding a port. If another sidecar
+  // already owns the data dir (orphan from a previous run, or a duplicate
+  // launch), fail fast instead of corrupting the store via concurrent writes.
+  try {
+    const dataDir = resolveDataDir();
+    mkdirSync(dataDir, { recursive: true });
+    acquireDataDirLock(dataDir);
+  } catch (err) {
+    if (err instanceof DataDirInUseError) {
+      process.stderr.write(`HUNTER_DATA_DIR_LOCKED holder=${err.holderPid} path=${err.lockPath}\n`);
+      console.error(err.message);
+      process.exit(2);
+    }
+    throw err;
+  }
+
+  void bindAndAnnounce(app).catch((err) => {
+    console.error(err);
+    process.exit(1);
   });
 }
 
 async function createOrMergeQueuedItem(input: CreateItemInput): Promise<LibraryItem> {
-  const recognitionInput = toRecognitionInput(input);
-  const item = buildQueuedItem(recognitionInput);
-  const queued = await libraryRepository.upsertQueued(item, recognitionInput);
-  const queuedEvent = buildCaptureEvent({ input: recognitionInput, item: queued });
-  await enqueueRecognition(recognitionInput, queued.id, queued.savedAt);
+  const item = buildQueuedItem(input);
+  const queued = await libraryRepository.upsertQueued(item, input);
+  const queuedEvent = buildCaptureEvent({ input, item: queued });
+  await enqueueRecognition(input, queued.id, queued.savedAt);
   await libraryRepository.recordCaptureEvent(queuedEvent);
   return queued;
 }
 
-function toPublicItem(item: LibraryItem): Omit<LibraryItem, "captureInput"> {
+function toPublicItem(item: LibraryItem): PublicLibraryItem {
   const { captureInput: _captureInput, ...publicItem } = item;
   return publicItem;
 }
 
-function parseConnectorProvider(value: string, response: express.Response): ConnectorProvider | undefined {
-  if (isConnectorProvider(value)) return value;
-  response.status(404).json({ error: "Connector not found" });
-  return undefined;
-}
+function sendLocalLlmError(error: unknown, response: express.Response): boolean {
+  if (!(error instanceof LocalLlmError)) return false;
 
-async function getConnectorView(provider: ConnectorProvider) {
-  const connectors = await libraryRepository.listConnectors();
-  const connector = connectors.find((candidate) => candidate.provider === provider);
-  if (!connector) {
-    throw new Error(`Connector definition missing for ${provider}`);
-  }
-  return connector;
-}
-
-function requestOrigin(request: express.Request): string {
-  return `${request.protocol}://${request.get("host")}`;
+  const invalidModelResponse = ["invalid_response", "invalid_json", "schema_mismatch"].includes(error.code);
+  response.status(invalidModelResponse ? 502 : 503).json({
+    error: invalidModelResponse ? "Local LLM returned an invalid response" : "Local LLM unavailable",
+    code: error.code
+  });
+  return true;
 }
 
 void drainRecognitionJobs();

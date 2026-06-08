@@ -1,11 +1,13 @@
 import { Readability } from "@mozilla/readability";
 import { Defuddle } from "defuddle/node";
 import { JSDOM } from "jsdom";
-import type { PageSnapshot } from "../../shared/types";
+import type { PageSnapshot, PageSnapshotContentCandidate } from "../../shared/types";
 import { contentHtmlFromSnapshot, contentHtmlFromText, sanitizeContentHtml } from "./contentHtml";
+import type { SourceType } from "../../shared/types";
+import { detectContentForm, type ContentForm } from "./contentForm";
 import { decideContentQuality, hasReadySelectedText, shouldRunReadabilityFallback } from "./contentQuality";
 import { selectCoverImage } from "./coverImage";
-import { fetchHtmlDocument } from "./htmlFetch";
+import { extractJsonLdMetadata } from "./jsonLd";
 import type { SourceAdapter } from "./types";
 import { absolutize, cleanText, detectSourceType, faviconFor, normalizeUrl } from "./url";
 
@@ -15,13 +17,18 @@ export const genericWebAdapter: SourceAdapter = {
   canHandle: () => true,
   async extract({ url, snapshot }) {
     const normalizedUrl = normalizeUrl(url);
-    const html = snapshot?.html ?? (await fetchHtmlDocument(normalizedUrl));
+    const browserSnapshotCandidate = pickBrowserSnapshotCandidate(snapshot);
+    const html = snapshot.html ?? browserSnapshotCandidate.html ?? "";
     const dom = new JSDOM(html, { url: normalizedUrl });
     const document = dom.window.document;
-    const metadata = extractMetadata(document, normalizedUrl, snapshot);
-    const snapshotText = cleanText(snapshot?.textContent);
-    const selectedText = cleanText(snapshot?.selectedText);
-    const parserDocument = hasReadySelectedText(selectedText) ? undefined : stripStructuralNoise(document.cloneNode(true) as Document);
+    const contentForm = detectContentForm(document);
+    const metadata = extractMetadata(document, normalizedUrl, snapshot, contentForm.form);
+    const snapshotText = browserSnapshotCandidate.text;
+    const selectedText = cleanText(snapshot.selectedText);
+    const parserHtml = browserSnapshotCandidate.html ?? html;
+    const parserDocument = hasReadySelectedText(selectedText)
+      ? undefined
+      : stripStructuralNoise(new JSDOM(parserHtml, { url: normalizedUrl }).window.document.cloneNode(true) as Document);
     const defuddled = parserDocument ? await parseWithDefuddle(parserDocument, normalizedUrl) : undefined;
     const defuddledText = htmlToText(defuddled?.content, normalizedUrl);
     const article =
@@ -37,53 +44,156 @@ export const genericWebAdapter: SourceAdapter = {
       { source: "metadata", text: metadata.description }
     ]);
     const title =
-      firstText(metadata.title, defuddled?.title, article?.title, snapshot?.title, metadata.documentTitle) ??
+      firstText(metadata.title, defuddled?.title, article?.title, snapshot.title, metadata.documentTitle) ??
       new URL(normalizedUrl).hostname;
     const sourceName =
-      firstText(snapshot?.siteName, defuddled?.site, article?.siteName, metadata.siteName) ?? new URL(normalizedUrl).hostname;
+      firstText(snapshot.siteName, defuddled?.site, article?.siteName, metadata.siteName) ?? new URL(normalizedUrl).hostname;
+    // For video/audio pages we prefer the structured uploader description
+    // (VideoObject/AudioObject.description) over snapshot.excerpt: on hosts
+    // like B站 that ship no meta description, snapshot.excerpt falls back to
+    // raw body text — usually unrelated to the video itself.
     const excerpt = cleanText(
-      selectedText || snapshot?.excerpt || defuddled?.description || article?.excerpt || metadata.description || quality.readableText
+      selectedText ||
+        metadata.formDescription ||
+        snapshot.excerpt ||
+        defuddled?.description ||
+        article?.excerpt ||
+        metadata.description ||
+        quality.readableText
     ).slice(0, 420);
     const hasContent = Boolean(quality.readableText || excerpt);
     const coverImage = await selectCoverImage({
       url: normalizedUrl,
       html,
-      snapshotCandidates: snapshot?.imageCandidates
+      snapshotCandidates: snapshot.imageCandidates,
+      preferred: metadata.formThumbnailUrl
     });
+    const urlSourceType = detectSourceType(normalizedUrl);
+    const sourceType = resolveSourceType(urlSourceType, contentForm.form);
 
     return {
       url: normalizedUrl,
-      canonicalUrl: normalizeUrl(snapshot?.canonicalUrl ?? metadata.canonicalUrl ?? normalizedUrl),
+      canonicalUrl: normalizeUrl(snapshot.canonicalUrl ?? metadata.canonicalUrl ?? normalizedUrl),
       title,
       sourceName,
-      sourceType: detectSourceType(normalizedUrl),
+      sourceType,
       excerpt,
       readableText: quality.readableText,
       contentHtml: pickContentHtml({
         parserHtml: defuddled?.content ?? article?.content,
-        snapshotHtml: snapshot?.html,
+        snapshotHtml: browserSnapshotCandidate.html ?? (browserSnapshotCandidate.kind === "body" ? undefined : snapshot.html),
         extractor: quality.extractor,
         readableText: quality.readableText
       }),
       coverImage,
-      favicon: snapshot?.favicon ?? absolutize(defuddled?.favicon, normalizedUrl) ?? metadata.favicon ?? faviconFor(normalizedUrl),
-      author: firstText(defuddled?.author, article?.byline, metadata.author),
-      publishedAt: firstText(snapshot?.publishedAt, defuddled?.published, article?.publishedTime, metadata.publishedAt),
+      favicon: snapshot.favicon ?? absolutize(defuddled?.favicon, normalizedUrl) ?? metadata.favicon ?? faviconFor(normalizedUrl),
+      author: firstText(metadata.formAuthor, defuddled?.author, article?.byline, metadata.author),
+      publishedAt: firstText(
+        metadata.formUploadDate,
+        snapshot.publishedAt,
+        defuddled?.published,
+        article?.publishedTime,
+        metadata.publishedAt
+      ),
       language: firstText(defuddled?.language, article?.lang),
       wordCount: quality.candidateSource === "defuddle" ? (defuddled?.wordCount ?? quality.wordCount) : quality.wordCount,
       confidence: quality.confidence,
       extractionState: quality.extractionState,
-      captureMethod: snapshot ? "extension_snapshot" : "url_fetch",
       extractor: quality.extractor,
-      sourceAccess: snapshot ? "browser_snapshot" : "public",
-      sourceMessage:
-        quality.sourceMessage ??
-        (hasContent
-          ? undefined
-          : "Only shallow page metadata was captured. Open the page and save with the browser extension for a fuller capture.")
+      sourceMessage: resolveSourceMessage(quality.sourceMessage, hasContent)
     };
   }
 };
+
+type BrowserSnapshotCandidate = {
+  kind: PageSnapshotContentCandidate["kind"] | "legacy";
+  text: string;
+  html?: string;
+  selector?: string;
+  score?: number;
+  order: number;
+};
+
+function pickBrowserSnapshotCandidate(snapshot: PageSnapshot): BrowserSnapshotCandidate {
+  const candidates: BrowserSnapshotCandidate[] = [
+    {
+      kind: "legacy" as const,
+      text: cleanText(snapshot.textContent),
+      html: snapshot.html,
+      selector: "snapshot.textContent",
+      order: 0
+    },
+    ...(snapshot.contentCandidates ?? []).map((candidate, index) => ({
+      kind: candidate.kind,
+      text: cleanText(candidate.text),
+      html: candidate.html,
+      selector: candidate.selector,
+      score: candidate.score,
+      order: index + 1
+    }))
+  ].filter((candidate) => candidate.text || candidate.html);
+
+  const deduped = dedupeSnapshotCandidates(candidates);
+  return (
+    deduped.sort((a, b) => scoreBrowserSnapshotCandidate(b) - scoreBrowserSnapshotCandidate(a) || a.order - b.order)[0] ?? {
+      kind: "legacy",
+      text: "",
+      html: snapshot.html,
+      selector: "snapshot.textContent",
+      order: 0
+    }
+  );
+}
+
+function dedupeSnapshotCandidates(candidates: BrowserSnapshotCandidate[]): BrowserSnapshotCandidate[] {
+  const seen = new Set<string>();
+  const result: BrowserSnapshotCandidate[] = [];
+  for (const candidate of candidates) {
+    const key = cleanText(candidate.text).slice(0, 500) || cleanText(htmlToText(candidate.html, "https://example.com")).slice(0, 500);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(candidate);
+  }
+  return result;
+}
+
+function scoreBrowserSnapshotCandidate(candidate: BrowserSnapshotCandidate): number {
+  const text = cleanText(candidate.text);
+  if (!text) return candidate.html ? 1 : 0;
+
+  const lengthScore = Math.min(text.length, 1400);
+  const structureScore = Math.min(Math.max(candidate.score ?? 0, 0), 1200) * 0.45;
+  const sentenceScore = Math.min(text.match(/[.!?。！？]/g)?.length ?? 0, 8) * 45;
+  const kindScore =
+    candidate.kind === "content_root" ? 320 : candidate.kind === "focused_root" ? 220 : candidate.kind === "legacy" ? 120 : -420;
+  const noisePenalty = lowSignalSnapshotText(text) ? 420 : 0;
+  return lengthScore + structureScore + sentenceScore + kindScore - noisePenalty;
+}
+
+function lowSignalSnapshotText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  if (/^(home|pricing|login|subscribe|sign in|for you|following|reply|repost|like)\b/.test(normalized)) return true;
+  const words = normalized.match(/[a-z]{3,}/g) ?? [];
+  if (words.length < 12) return false;
+  const unique = new Set(words);
+  return unique.size / words.length < 0.18;
+}
+
+function resolveSourceType(urlSourceType: SourceType, form: ContentForm): SourceType {
+  // Only promote when URL routing fell into the generic "article" bucket so
+  // host-specific routing (feishu/tweet/pdf/video) stays authoritative.
+  if (urlSourceType !== "article") return urlSourceType;
+  if (form === "video") return "video";
+  return urlSourceType;
+}
+
+function resolveSourceMessage(qualityMessage: string | undefined, hasContent: boolean): string | undefined {
+  if (qualityMessage) return qualityMessage;
+  if (!hasContent) {
+    return "Only shallow page metadata was captured. Open the page and save with the browser extension for a fuller capture.";
+  }
+  return undefined;
+}
 
 async function parseWithDefuddle(document: Document, url: string) {
   try {
@@ -99,15 +209,24 @@ async function parseWithDefuddle(document: Document, url: string) {
   }
 }
 
-function extractMetadata(document: Document, url: string, snapshot?: PageSnapshot) {
+function extractMetadata(document: Document, url: string, snapshot: PageSnapshot | undefined, form: ContentForm) {
   const meta = (selector: string) => document.querySelector<HTMLMetaElement>(selector)?.content?.trim();
   const link = (selector: string) => document.querySelector<HTMLLinkElement>(selector)?.href?.trim();
-  const jsonLd = parseJsonLd(document);
+  const jsonLd = extractJsonLdMetadata(document, form);
+  // Form-shaped JSON-LD (VideoObject/AudioObject/etc.) declares the page's primary
+  // resource; expose its author/uploadDate/description separately so the adapter
+  // can prefer them over page-wide defaults like Defuddle's site-level
+  // <meta name="author"> or a generic og:description that B站 / similar sites
+  // either omit entirely or fill with a stale SEO snippet.
+  const formAuthor = form === "video" || form === "audio" ? jsonLd.formAuthorName : undefined;
+  const formUploadDate = form === "video" || form === "audio" ? jsonLd.formUploadDate : undefined;
+  const formDescription = form === "video" || form === "audio" ? jsonLd.formDescription : undefined;
 
   return {
     title: meta('meta[property="og:title"]') ?? meta('meta[name="twitter:title"]') ?? jsonLd.title,
     documentTitle: document.title,
     description:
+      formDescription ??
       meta('meta[property="og:description"]') ??
       meta('meta[name="twitter:description"]') ??
       meta('meta[name="description"]') ??
@@ -116,64 +235,13 @@ function extractMetadata(document: Document, url: string, snapshot?: PageSnapsho
     canonicalUrl: absolutize(link('link[rel="canonical"]') ?? meta('meta[property="og:url"]'), url),
     favicon: snapshot?.favicon ?? absolutize(link('link[rel="icon"]') ?? link('link[rel="shortcut icon"]'), url),
     author: meta('meta[name="author"]') ?? jsonLd.authorName,
-    publishedAt: meta('meta[property="article:published_time"]') ?? meta('meta[name="date"]') ?? jsonLd.datePublished ?? jsonLd.dateModified
+    publishedAt:
+      meta('meta[property="article:published_time"]') ?? meta('meta[name="date"]') ?? jsonLd.datePublished ?? jsonLd.dateModified,
+    formAuthor,
+    formUploadDate,
+    formThumbnailUrl: jsonLd.formThumbnailUrl,
+    formDescription
   };
-}
-
-function parseJsonLd(document: Document) {
-  const scripts = [...document.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]')];
-  const parsedValues: unknown[] = [];
-
-  for (const script of scripts) {
-    try {
-      parsedValues.push(JSON.parse(script.textContent ?? ""));
-    } catch {
-      continue;
-    }
-  }
-
-  const node = pickJsonLdArticleNode(parsedValues);
-  return {
-    title: firstText(asText(node.headline), asText(node.name)),
-    description: asText(node.description),
-    authorName: firstJsonLdText(node.author, "name"),
-    publisherName: firstJsonLdText(node.publisher, "name"),
-    datePublished: asText(node.datePublished),
-    dateModified: asText(node.dateModified)
-  };
-}
-
-function pickJsonLdArticleNode(value: unknown): Record<string, unknown> {
-  const nodes = flattenJsonLdNodes(value);
-  const articleNode = nodes.find((node) => isArticleJsonLdNode(node));
-  return articleNode ?? nodes[0] ?? {};
-}
-
-function flattenJsonLdNodes(value: unknown): Array<Record<string, unknown>> {
-  if (!value) return [];
-  if (Array.isArray(value)) return value.flatMap(flattenJsonLdNodes);
-  if (typeof value !== "object") return [];
-
-  const record = value as Record<string, unknown>;
-  const graph = flattenJsonLdNodes(record["@graph"]);
-  return [record, ...graph];
-}
-
-function isArticleJsonLdNode(value: Record<string, unknown>): boolean {
-  const types = Array.isArray(value["@type"]) ? value["@type"] : [value["@type"]];
-  return types.some((type) => typeof type === "string" && /^(Article|NewsArticle|BlogPosting|Report|TechArticle)$/i.test(type));
-}
-
-function firstJsonLdText(value: unknown, key: string): string | undefined {
-  if (Array.isArray(value)) {
-    return value.map((entry) => firstJsonLdText(entry, key)).find(Boolean);
-  }
-
-  if (typeof value === "object" && value) {
-    return asText((value as Record<string, unknown>)[key]);
-  }
-
-  return asText(value);
 }
 
 function stripStructuralNoise(document: Document): Document {
@@ -218,10 +286,6 @@ function htmlToText(html: string | null | undefined, url: string): string {
   if (!html) return "";
   const dom = new JSDOM(html, { url });
   return cleanText(dom.window.document.body.textContent ?? "");
-}
-
-function asText(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 function asOptionalString(value: string | null | undefined): string | undefined {

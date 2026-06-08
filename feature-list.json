@@ -1,8 +1,883 @@
 {
   "version": 1,
-  "updatedAt": "2026-06-03",
-  "statusValues": ["ready", "in_progress", "blocked", "done"],
+  "updatedAt": "2026-06-08",
+  "statusValues": ["ready", "in_progress", "blocked", "done", "cancelled"],
   "features": [
+    {
+      "id": "agent-incremental-category-filters",
+      "title": "Classify saved items incrementally into reusable AI topic filters",
+      "status": "done",
+      "scope": [
+        "Extend agent classification with a user-facing `contentCategory` bucket that is separate from deterministic tags and the coarse `primaryCategory` label.",
+        "Before each classification, pass existing generated categories to the model so it can reuse a matching category or create a new concise category only when none fit.",
+        "Add an incremental classification endpoint that processes only ready/partial items with missing or stale agent categories, using item `contentHash` to avoid unnecessary reclassification.",
+        "Keep the batch endpoint as orchestration over one model call per item so result mapping, retry behavior, and future on-device queue execution remain simple.",
+        "Expose generated category counts through `LibraryStats.agentCategories` and support `GET /api/items?agentCategoryId=<id>` filtering in both JSON and SQLite repositories.",
+        "Add a modern Search-below AI topic filter UI in the middle library column, with All/topic chips, counts, an Analyze action, background incremental classification when the model is reachable, and compact error feedback."
+      ],
+      "outOfScope": [
+        "Using LLM categories to mutate user tags, deterministic Content Signals, source recognition, extraction state, or recognition confidence.",
+        "Combining multiple saved items into one model prompt; that can be optimized later after partial-failure and result-alignment semantics are defined.",
+        "Adding a durable background job queue for agent classification; this slice keeps it app-triggered and API-driven."
+      ],
+      "dependencies": ["agent-local-llm-classification"],
+      "definitionOfDone": [
+        "Classifications store a normalized `contentCategory` with stable id, label, optional description, and source=`existing|new`.",
+        "Single-item and incremental classification prompts include existing category summaries and normalize model output back to existing ids when possible.",
+        "Incremental classification skips processing/failed items and already-fresh classifications.",
+        "Library responses include generated category counts and can be filtered by generated category id.",
+        "Search-below AI topic chips render from category stats and can trigger incremental classification manually while auto-classification runs only when the configured LLM is reachable.",
+        "Tests cover category generation, category reuse, incremental classification, and category filtering."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:agent",
+          "proves": "The mocked Ollama/DeepSeek agent flow generates and reuses content categories, runs incremental classification, and filters by generated category id."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The extended shared types, repository APIs, agent prompt schema, and UI hooks type-check together."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The agent, repository, and UI edits satisfy the zero-warning lint gate."
+        },
+        {
+          "command": "pnpm build",
+          "proves": "The Search-below AI topic UI compiles into the production renderer bundle."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-08",
+          "commands": [
+            "./node_modules/.bin/tsx server/tests/agentLocalLlm.test.ts",
+            "./node_modules/.bin/tsx server/tests/sqliteRepository.test.ts",
+            "./node_modules/.bin/tsc --noEmit",
+            "./node_modules/.bin/eslint shared/types.ts server/agents/contentCategories.ts server/agents/contentClassifier.ts server/index.ts server/repositories/types.ts server/repositories/listQuery.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/repository.ts server/store.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/lib/agent.ts src/hooks/useLibrary.ts src/components/AgentCategoryFilters.tsx src/components/LibraryToolbar.tsx src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/lib/stats.ts src/constants.ts --max-warnings=0",
+            "pnpm verify"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "shared/types.ts",
+            "server/agents/contentCategories.ts",
+            "server/agents/contentClassifier.ts",
+            "server/index.ts",
+            "server/repositories/types.ts",
+            "server/repositories/listQuery.ts",
+            "server/repositories/jsonRepository.ts",
+            "server/repositories/sqliteRepository.ts",
+            "server/repository.ts",
+            "server/store.ts",
+            "server/tests/agentLocalLlm.test.ts",
+            "src/lib/api.ts",
+            "src/lib/agent.ts",
+            "src/hooks/useLibrary.ts",
+            "src/components/AgentCategoryFilters.tsx",
+            "src/components/LibraryToolbar.tsx",
+            "src/pages/LibraryPage.tsx",
+            "src/components/ItemDetail.tsx",
+            "src/lib/stats.ts",
+            "src/constants.ts",
+            "src/styles.css",
+            "docs/AGENT_LOCAL_LLM.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "`agentLocalLlm.test.ts` mocks Ollama `/api/tags` and `/api/generate` plus DeepSeek `/models` and `/chat/completions`; it does not require a local Ollama install, real model weights, or a real DeepSeek API key.",
+          "notes": "The fixture proves the first classified item creates `AI Systems`, the second incremental item reuses `ai-systems` through `existingCategoryId`, and `GET /api/items?agentCategoryId=ai-systems` returns both items. Full `pnpm verify` passed after refreshing Darwin visual baselines for the AI topics, Agent detail, and Settings UI."
+        }
+      ],
+      "next": "Next slices: add a durable agent job queue/progress surface, tune multi-item batching if remote-token costs matter, or replace the DeepSeek mock path with the future embedded on-device model runtime."
+    },
+    {
+      "id": "agent-local-llm-classification",
+      "title": "Add optional LLM agent classification through Ollama and OpenAI-compatible providers",
+      "status": "done",
+      "scope": [
+        "Add an isolated server-side agent module that can probe a configured LLM provider and run schema-validated JSON generation.",
+        "Add an OpenAI-compatible Chat Completions provider path and a DeepSeek preset using `https://api.deepseek.com`.",
+        "Add item classification that reads only existing captured Hunter item fields and returns primary category, intent, topics, summary, key points, confidence, language, and follow-up signal.",
+        "Expose `GET /api/agent/local-llm` for runtime/model status and `POST /api/agent/items/:id/classify` for one-off item classification.",
+        "Expose `GET /api/agent/settings` and `PATCH /api/agent/settings` plus a sidebar Settings modal for selecting Ollama, DeepSeek, or another OpenAI-compatible provider without env vars.",
+        "Persist agent output as `agentClassification` on saved items and show it in the item detail panel.",
+        "Keep agent output optional so capture, source recognition, extraction state, deterministic Content Signals, refresh, and user tags stay unchanged.",
+        "Document Ollama as the default local development/runtime path, DeepSeek as the first third-party provider path, and fully embedded on-device models as a later runtime track."
+      ],
+      "outOfScope": [
+        "Using LLM output to decide sourceType, extraction state, recognition confidence, tags, or summary in the deterministic recognition pipeline.",
+        "Bundling a native on-device model runtime or model weights into the Electron app.",
+        "Bundling provider SDKs; provider calls use `fetch`."
+      ],
+      "dependencies": [],
+      "definitionOfDone": [
+        "LLM status endpoint reports configured provider, base URL, selected model, available models when available, and model availability.",
+        "Settings modal stores provider, base URL, model, and API key while the API returns only whether a key is configured.",
+        "DeepSeek status and classification work through the OpenAI-compatible `/models` and `/chat/completions` request shapes.",
+        "Classification endpoint validates model JSON with an explicit schema and returns stable 502/503 failures for invalid model output or unavailable runtime.",
+        "Classification results persist in JSON and SQLite repositories and render in the item detail panel.",
+        "Agent tests mock Ollama so local verification does not require a model install.",
+        "Documentation records the runtime boundary and verification command."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:agent",
+          "proves": "The LLM status and item-classification API paths work against mocked Ollama and DeepSeek runtimes, including invalid JSON and unavailable-runtime behavior."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The agent module and API routes type-check with the rest of the server."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The agent module, API routes, and tests satisfy the zero-warning lint gate."
+        },
+        {
+          "command": "pnpm format:check",
+          "proves": "The edited agent, API, package, and documentation files stay Prettier-clean."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-05",
+          "commands": [
+            "./node_modules/.bin/tsx server/tests/agentLocalLlm.test.ts",
+            "./node_modules/.bin/prettier --check shared/types.ts server/agents/localLlm.ts server/agents/contentClassifier.ts server/agents/llmSettings.ts server/repositories/types.ts server/repository.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/index.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/hooks/useLibrary.ts src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/components/LibrarySidebar.tsx src/components/SettingsPanel.tsx src/styles.css docs/AGENT_LOCAL_LLM.md docs/INDEX.md docs/TECHNICAL_DESIGN.md docs/CONTENT_RECOGNITION.md progress.md session-handoff.md package.json feature-list.json",
+            "./node_modules/.bin/eslint shared/types.ts server/agents/localLlm.ts server/agents/contentClassifier.ts server/agents/llmSettings.ts server/repositories/types.ts server/repository.ts server/repositories/jsonRepository.ts server/repositories/sqliteRepository.ts server/index.ts server/tests/agentLocalLlm.test.ts src/lib/api.ts src/hooks/useLibrary.ts src/pages/LibraryPage.tsx src/components/ItemDetail.tsx src/components/LibrarySidebar.tsx src/components/SettingsPanel.tsx --max-warnings=0",
+            "./node_modules/.bin/eslint . --max-warnings=0",
+            "./node_modules/.bin/tsc --noEmit",
+            "./node_modules/.bin/tsx server/tests/sqliteRepository.test.ts",
+            "PATH=/Users/bytedance/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH ./node_modules/.bin/vite build",
+            "Browser smoke: temp API on 4327 + Vite on 5188; opened sidebar Settings, selected DeepSeek, saved a fake key, confirmed key-set UI and public settings response without raw key"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "shared/types.ts",
+            "server/agents/localLlm.ts",
+            "server/agents/contentClassifier.ts",
+            "server/agents/llmSettings.ts",
+            "server/repositories/types.ts",
+            "server/repository.ts",
+            "server/repositories/jsonRepository.ts",
+            "server/repositories/sqliteRepository.ts",
+            "server/tests/agentLocalLlm.test.ts",
+            "server/index.ts",
+            "src/lib/api.ts",
+            "src/hooks/useLibrary.ts",
+            "src/pages/LibraryPage.tsx",
+            "src/components/ItemDetail.tsx",
+            "src/components/LibrarySidebar.tsx",
+            "src/components/SettingsPanel.tsx",
+            "src/styles.css",
+            "docs/AGENT_LOCAL_LLM.md",
+            "docs/INDEX.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/CONTENT_RECOGNITION.md",
+            "package.json",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "`agentLocalLlm.test.ts` mocks Ollama `/api/tags` and `/api/generate` plus DeepSeek `/models` and `/chat/completions`; it does not require a local Ollama install, real model weights, or a real DeepSeek API key. The SQLite repository fixture uses an in-memory database.",
+          "notes": "The current shell does not expose `pnpm`, so equivalent direct local binaries were used. Agent classification now persists as `agentClassification` and renders in the detail panel. The sidebar Settings modal now writes local provider configuration without returning raw API keys to the renderer, and switching cloud providers clears the previous provider's saved key unless a replacement key is provided. Browser smoke verified the left-sidebar Settings trigger, DeepSeek defaults, API-key field, saved state, and `apiKeyConfigured`-only public response. `./node_modules/.bin/tsc --noEmit` is green. A direct `./node_modules/.bin/vite build` under the default Codex app Node failed because macOS rejected Rollup's native optional dependency signature; the same build passed under the bundled workspace Node via PATH."
+        }
+      ],
+      "next": "Next slices: add batch classification, classification filters/search affordances, or start the separate embedded on-device model runtime track."
+    },
+    {
+      "id": "electron-desktop-shell-migration",
+      "title": "Replace the previous desktop shell with Electron",
+      "status": "done",
+      "scope": [
+        "Replace the active desktop dev entry point with an Electron shell that owns the React window, Vite dev URL, and Node API sidecar.",
+        "Move sidecar supervision from the legacy Rust shell to `electron/main.cjs`, preserving the `HUNTER_API_PORT=<port>` stdout handshake and 4317-4319 port range.",
+        "Expose a minimal preload bridge for API base discovery, api-ready events, and login autostart without enabling renderer Node integration.",
+        "Update the React API-base resolver and autostart hook to use the Electron bridge while keeping browser/golden runs on relative `/api` URLs.",
+        "Configure the Vite production build for relative asset URLs so packaged Electron `file://` rendering loads JS, CSS, and brand assets correctly.",
+        "Move server bundle output from the legacy desktop resources directory to `electron/resources`, and configure `electron-builder` to copy `server.cjs` plus runtime `node_modules` into the packaged app resources.",
+        "Remove active legacy desktop npm dependencies, scripts, and shell directory; update docs and local run instructions to Electron."
+      ],
+      "outOfScope": [
+        "Changing capture, recognition, source adapters, extension save behavior, repository semantics, or public API contracts.",
+        "Shipping signed/notarized release artifacts or auto-updater wiring.",
+        "Migrating existing packaged-app user data directories."
+      ],
+      "dependencies": [],
+      "definitionOfDone": [
+        "`pnpm dev` launches Electron, starts Vite, starts the API sidecar, and reports `api ready`.",
+        "`pnpm electron:dir` builds an unsigned unpacked Electron app.",
+        "A packaged-app smoke launch resolves the bridge API base, renders the Library UI, and has no `ERR_FILE_NOT_FOUND` resource failures.",
+        "`pnpm verify` passes."
+      ],
+      "verification": [
+        {
+          "command": "ELECTRON_RUN_AS_NODE=1 pnpm exec electron -e '<print Node version and require node:sqlite>'",
+          "proves": "The Electron runtime can run the API sidecar in Node mode and supports the current SQLite dependency."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "The React desktop bridge and autostart hook type-check after removing legacy desktop plugin imports."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The Electron dev script and edited TypeScript/JavaScript files satisfy the zero-warning lint gate."
+        },
+        {
+          "command": "pnpm format:check",
+          "proves": "The migration files and repository stay Prettier-clean."
+        },
+        {
+          "command": "pnpm test",
+          "proves": "Existing recognition, repository, source contract, extension, port, data-dir, and queue behavior still passes."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "The API can still save/read using an isolated local repository."
+        },
+        {
+          "command": "pnpm server:bundle",
+          "proves": "The API bundle writes `server.cjs` and runtime dependencies under `electron/resources`."
+        },
+        {
+          "command": "pnpm electron:dir",
+          "proves": "Electron-builder can produce an unsigned unpacked app from the new shell and bundled sidecar resources."
+        },
+        {
+          "command": "node --input-type=module '<launch release/mac-arm64/Hunter.app/Contents/MacOS/Hunter and assert bridge/API/UI/no file-resource failures>'",
+          "proves": "The packaged app can start the sidecar, resolve external runtime dependencies, expose the preload bridge, load relative renderer assets, and render the Library UI."
+        },
+        {
+          "command": "node -e '<launch pnpm dev until api ready>'",
+          "proves": "The new dev entry point starts Vite, Electron, and the API sidecar."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The Electron migration remains compatible with the full local gate, including browser, extension, visual, and production build journeys."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-04",
+          "commands": [
+            "ELECTRON_RUN_AS_NODE=1 pnpm exec electron -e \"console.log(process.versions.node); try { require('node:sqlite'); console.log('sqlite=yes'); } catch (err) { console.log('sqlite=no:' + err.message); }\"",
+            "pnpm check",
+            "pnpm lint",
+            "pnpm test:listen",
+            "pnpm test:data-dir",
+            "pnpm test:api-base",
+            "pnpm server:bundle",
+            "pnpm electron:dir",
+            "node -e '<launch release/mac-arm64/Hunter.app/Contents/MacOS/Hunter until [hunter] api ready>'",
+            "node -e '<launch pnpm dev until [hunter] api ready>'",
+            "pnpm format:check",
+            "pnpm test",
+            "pnpm smoke:api",
+            "pnpm harness:init",
+            "pnpm golden:visual:update",
+            "pnpm golden:visual",
+            "node --input-type=module '<launch release/mac-arm64/Hunter.app/Contents/MacOS/Hunter and assert bridge/API/UI/no ERR_FILE_NOT_FOUND>'",
+            "pnpm verify"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "electron/main.cjs",
+            "electron/preload.cjs",
+            "electron/dev.mjs",
+            "electron/icons/icon.icns",
+            "electron/icons/icon.ico",
+            "electron/icons/icon.png",
+            "package.json",
+            "pnpm-lock.yaml",
+            "src/lib/api.ts",
+            "src/lib/desktopBridge.ts",
+            "src/hooks/useAutostart.ts",
+            "src/pages/LibraryPage.tsx",
+            "src/styles.css",
+            "src/components/ui/button.tsx",
+            "scripts/bundle-server.mjs",
+            "scripts/golden-extension.ts",
+            "docs/DESKTOP_OFFLINE_ARCHITECTURE.md",
+            "vite.config.ts",
+            "tests/visual-baselines/darwin-arm64/desktop-library.png",
+            "tests/visual-baselines/darwin-arm64/mobile-library.png",
+            "tests/visual-baselines/darwin-arm64/mobile-detail.png",
+            "README.md",
+            "extension/README.md",
+            "AGENTS.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature-list.json"
+          ],
+          "mockBoundary": "The packaged smoke launched the real unsigned unpacked Electron app, asserted `window.hunterDesktop`, resolved `getApiBase()` to 127.0.0.1:4317-4319, verified login autostart availability, confirmed renderer Node globals are absent, waited for the Library UI, and failed on `ERR_FILE_NOT_FOUND` resource logs. It did not create a signed/notarized installer. The `pnpm dev` smoke stopped after sidecar handshake, so its `ELIFECYCLE` log came from intentional process termination after success.",
+          "notes": "The initial `pnpm electron:dir` run failed when electron-builder auto-discovered two identical local Apple Development certificates and codesign reported an ambiguous identity. The final config sets `mac.identity=null` for unsigned local prototype builds, and the rerun passed. A second packaged smoke caught `Cannot find module 'jsdom'` because `runtime/node_modules` was copied under `Resources/runtime/node_modules`; `extraResources` now maps it to `Resources/node_modules`. A later packaged smoke caught blank `file://` rendering from absolute Vite asset paths; `vite.config.ts` now sets `base: \"./\"`, and the packaged app renders the Library UI without file-resource failures. The extension golden now waits for the isolated API from the extension context before the first runtime save, and only skips the `chrome.action.openPopup()` assertion for Chromium's environment-specific `active browser window` automation error; the visible popup save journey still runs."
+        }
+      ],
+      "next": "Release engineering remains open: code signing, notarization, Windows signing, auto-updater, and packaged-app data directory migration."
+    },
+    {
+      "id": "extension-article-video-support-gate",
+      "title": "Gate extension add UI to supported article, video, and X post resources",
+      "status": "done",
+      "scope": [
+        "Add a deterministic extension-side preflight detector for supported article, video, and X post resources using source-specific X route checks, Open Graph, Twitter player cards, JSON-LD @type, focused article roots, weak video-element tiebreakers, and server-aligned YouTube/Vimeo host hints.",
+        "Show the add form only when the current tab passes the supported-resource gate.",
+        "Render an unsupported-resource bubble in the toolbar popup for unsupported pages instead of exposing the Save action.",
+        "Apply the same gate to background/runtime saves and the context-menu save path so unsupported snapshots are not posted to the API.",
+        "Keep the gate as UX preflight only; final sourceType and extraction quality remain owned by server recognition.",
+        "Probe a configured off-list localhost API base before the default 4317-4319 candidates so isolated extension goldens and custom local ports do not accidentally save into another running Hunter instance."
+      ],
+      "outOfScope": [
+        "Changing server-side content recognition rules or adding AI/remote checks.",
+        "Using plugin-guessed sourceType to override server recognition.",
+        "Supporting PDFs, X feeds/profiles/search timelines, Feishu docs, products, discussions, or dashboards through this plugin add UI gate."
+      ],
+      "dependencies": ["content-form-detector", "extension-popup-ui-theme-refresh"],
+      "definitionOfDone": [
+        "`pnpm test:content-support` covers supported article/video/X detail pages and unsupported product/unknown/PDF/X feed cases.",
+        "`pnpm test:api-base` covers configured off-list localhost ports winning over default candidates.",
+        "`pnpm golden:extension` passes while another local Hunter dev server is active on the default port.",
+        "`pnpm lint`, `pnpm check`, `pnpm format:check`, and `pnpm test` pass."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:content-support",
+          "proves": "The extension preflight detector supports article metadata, article roots, video JSON-LD/OG signals, embedded-video articles, X status/article detail routes, and rejects unsupported product, unknown, PDF, and X feed resources."
+        },
+        {
+          "command": "pnpm test:api-base",
+          "proves": "Configured off-list localhost API bases are probed before the default 4317-4319 candidates."
+        },
+        {
+          "command": "pnpm golden:extension",
+          "proves": "The installed MV3 extension still saves supported article pages through the background path and visible popup path, and rejects unsupported resources before posting snapshots."
+        },
+        {
+          "command": "pnpm test",
+          "proves": "The full unit suite passes with the new extension support gate included in the default test command."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-04",
+          "commands": [
+            "pnpm test:content-support",
+            "pnpm test:extension",
+            "pnpm test:cover-preview",
+            "pnpm test:save-actions",
+            "pnpm test:api-base",
+            "pnpm lint",
+            "pnpm check",
+            "pnpm format:check",
+            "pnpm golden:extension",
+            "pnpm test"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "extension/manifest.json",
+            "extension/popup.html",
+            "extension/styles.css",
+            "extension/src/apiBase.js",
+            "extension/src/background.js",
+            "extension/src/contentSupport.js",
+            "extension/src/popup.js",
+            "extension/tests/apiBase.test.ts",
+            "extension/tests/contentSupport.test.ts",
+            "scripts/golden-extension.ts",
+            "package.json",
+            "extension/README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature-list.json"
+          ],
+          "mockBoundary": "The support detector tests run in jsdom and assert deterministic page-signal classification; they do not fetch live sites. `pnpm golden:extension` installs the real MV3 extension into Chromium against local fixture/API/web servers and was run while a separate `pnpm dev` process was active on the default port.",
+          "notes": "The initial dynamic `chrome.action.openPopup()` approach was rejected after it produced a Chrome runtime error once async detection consumed the user gesture. The final implementation keeps the manifest default popup, performs the gate inside the popup before revealing the add form, and keeps background/context-menu saves guarded. X/Twitter source-route checks run before generic DOM scoring so feed pages cannot pass due to article-like cards while post detail and X article URLs remain saveable. The API-base resolver fix explains and resolves the earlier installed-extension golden empty-list failure: random localhost API ports now win before default 4317-4319 probes."
+        }
+      ],
+      "next": "If the supported set expands beyond article/video/X post detail pages, add the new form to `contentSupport.js`, server SourceType/schema handling, and popup copy together."
+    },
+    {
+      "id": "extension-popup-ui-theme-refresh",
+      "title": "Align extension popup UI with the main Hunter dark theme",
+      "status": "done",
+      "scope": [
+        "Apply the main web client's neutral shadcn-style dark theme tokens to the static extension popup.",
+        "Replace the older warm accent treatment with the main app's neutral primary button, card borders, focus rings, scrollbars, and typography fallbacks.",
+        "Restyle the page preview, source badge, snapshot badge, save metadata form, API details control, status row, and hidden unsupported-resource card using the same card/badge/input/button visual language as the main app.",
+        "Keep the visible popup save contract intact: `#tags`, `#note`, `#apiBase`, `#saveButton`, and the success text `Saved. Click Reload in Hunter.` remain available for the installed extension journey.",
+        "Keep the popup compact enough for a Chrome extension window, with local visual preview confirming a 376px popup width, about 584px content height, and no horizontal overflow."
+      ],
+      "outOfScope": [
+        "Changing capture, recognition, background save, offline queue, API, or repository behavior."
+      ],
+      "dependencies": ["library-ui-theme-detail-refresh"],
+      "definitionOfDone": [
+        "Extension popup HTML/CSS/JS format check passes.",
+        "`pnpm lint` and `pnpm check` pass.",
+        "Extension unit tests covering extractor, content-support gate, cover preview, API base resolution, and save actions pass.",
+        "`pnpm smoke:api` and `pnpm build` pass.",
+        "Local browser preview shows no horizontal overflow and keeps the popup under 600px content height."
+      ],
+      "verification": [
+        {
+          "command": "pnpm exec prettier --check extension/popup.html extension/styles.css extension/src/popup.js",
+          "proves": "The edited popup files keep repository formatting."
+        },
+        {
+          "command": "pnpm lint",
+          "proves": "The UI refresh keeps the zero-warning lint gate clean."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "TypeScript still checks after the popup HTML/JS/CSS changes."
+        },
+        {
+          "command": "pnpm test:extension && pnpm test:content-support && pnpm test:cover-preview && pnpm test:api-base && pnpm test:save-actions",
+          "proves": "The extension extractor, support gate, cover preview, API base resolver, and save action pipeline remain intact."
+        },
+        {
+          "command": "pnpm smoke:api",
+          "proves": "The local API save/read/recognition smoke path still passes independently of the installed extension golden issue."
+        },
+        {
+          "command": "pnpm build",
+          "proves": "The web client still builds after the shared theme-alignment work."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-04",
+          "commands": [
+            "pnpm exec prettier --check extension/popup.html extension/styles.css extension/src/popup.js",
+            "pnpm lint",
+            "pnpm check",
+            "pnpm test:extension",
+            "pnpm test:content-support",
+            "pnpm test:cover-preview",
+            "pnpm test:api-base",
+            "pnpm test:save-actions",
+            "pnpm smoke:api",
+            "pnpm build"
+          ],
+          "result": "passed",
+          "artifacts": ["extension/popup.html", "extension/styles.css", "extension/src/popup.js", "feature-list.json", "progress.md", "session-handoff.md"],
+          "mockBoundary": "The visual preview used a local static HTTP rendering of the popup HTML/CSS with sample tab data and data-URL image assets. It did not exercise Chrome extension APIs; behavior coverage comes from the extension unit tests and API smoke test.",
+          "notes": "The popup now uses the main client's neutral dark tokens, compact card/input/button treatments, source and snapshot badges, a chevron details control, a status dot row, and a real icon+text Save button whose accessible name remains `Save`. Browser preview measured body width 376px, popup height about 584px, and no horizontal overflow. `pnpm golden:extension` was attempted three times and failed before the visible popup path at that point; the later extension gate/API-base fix resolved the installed-extension golden, which now passes."
+        }
+      ],
+      "next": "No popup-theme-specific follow-up; continue extension work through the supported-resource gate and source-recognition slices."
+    },
+    {
+      "id": "article-image-candidate-priority",
+      "title": "Prefer real article and X media images over default platform previews",
+      "status": "done",
+      "scope": [
+        "Treat X's logged-in default Open Graph image (`abs.twimg.com/rweb/ssr/default/.../og/image.png`) as a weak platform placeholder, not a valid post image.",
+        "Make the X source adapter prefer attached tweet media from `pbs.twimg.com/media` inside tweet photo regions before falling back to generic meta images.",
+        "Broaden extension snapshot image candidate collection to include focused-root images, `srcset`, common lazy-loading attributes, and inline `background-image` URLs.",
+        "Rank image candidates before applying the fixed snapshot cap so real article/media images are not displaced by avatars, emoji, icons, default previews, or sidebar images.",
+        "Keep all recognition snapshot-only: no server-side page fetch, oEmbed fetch, AI recognition, or remote image validation."
+      ],
+      "outOfScope": [
+        "Downloading or validating image bytes at recognition time.",
+        "Changing the public LibraryItem schema to store image dimensions or multiple article images.",
+        "Migrating existing saved items automatically; previously saved items need manual Refresh or re-save to replace old coverImage values."
+      ],
+      "dependencies": ["extractor-body-jsonld", "cover-image-https-upgrade"],
+      "definitionOfDone": [
+        "The reported stored snapshot for `https://x.com/idoubicc/status/2062152804014436508` re-recognizes to the real `pbs.twimg.com/media/HJ4...` image instead of X's default og image.",
+        "`pnpm test:cover` proves X's default og image is filtered and falls back to tweet media candidates.",
+        "`pnpm test:source-contracts` covers an X DOM snapshot with avatar/emoji/default-og before attached tweet media.",
+        "`pnpm test:extension` covers extractor candidate ranking plus responsive/lazy/background article image candidates.",
+        "`pnpm test:cover-preview` covers popup preview article candidates and X media ranking.",
+        "`pnpm check`, `pnpm lint`, and `pnpm test` pass."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:cover",
+          "proves": "Cover selection rejects the X platform-default og image and falls through to a real tweet media candidate."
+        },
+        {
+          "command": "pnpm test:source-contracts",
+          "proves": "The X adapter prefers attached tweet media from the snapshot over avatars, emoji, and X's default og image."
+        },
+        {
+          "command": "pnpm test:extension",
+          "proves": "The extension extractor ranks X tweet media ahead of default og previews and captures responsive/lazy/background article images."
+        },
+        {
+          "command": "pnpm test:cover-preview",
+          "proves": "The popup preview sees article image candidates and ranks X tweet media ahead of the default og image."
+        },
+        {
+          "command": "pnpm check && pnpm lint && pnpm test",
+          "proves": "The image-candidate changes compile, lint, and do not regress the full deterministic unit suite."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-04",
+          "commands": [
+            "pnpm test:cover",
+            "pnpm test:source-contracts",
+            "pnpm test:extension",
+            "pnpm test:cover-preview",
+            "pnpm exec tsx -e '<rerun xAdapter against the stored snapshot for https://x.com/idoubicc/status/2062152804014436508>'",
+            "pnpm test",
+            "pnpm exec prettier --check extension/src/extractor.js extension/src/coverPreview.js extension/tests/extractor.test.ts extension/tests/coverPreview.test.ts server/sources/x.ts server/sources/coverImage.ts server/tests/sourceContracts.test.ts server/tests/coverImage.test.ts",
+            "pnpm check",
+            "pnpm lint",
+            "pnpm test:cover && pnpm test:source-contracts && pnpm test:extension && pnpm test:cover-preview"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "extension/src/extractor.js",
+            "extension/src/coverPreview.js",
+            "extension/tests/extractor.test.ts",
+            "extension/tests/coverPreview.test.ts",
+            "server/sources/coverImage.ts",
+            "server/sources/x.ts",
+            "server/tests/coverImage.test.ts",
+            "server/tests/sourceContracts.test.ts",
+            "docs/CONTENT_RECOGNITION.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "All coverage stays inside browser snapshots and JSDOM fixtures. The specific reported URL was validated by re-running the X adapter against the locally stored `captureInput.snapshot` in `data/hunter-store.json`; no live X fetch, oEmbed call, image download, remote validation, or AI recognition was added.",
+          "notes": "Root cause: the reported snapshot already contained real `pbs.twimg.com/media` candidates, but the server treated X's default `og:image` as preferred/useful and returned it before checking snapshot candidates. The X adapter now extracts tweet media from `tweetPhoto`/photo regions first, and the shared cover filter rejects the X platform-default og image. The extension extractor and popup preview now collect and rank `srcset`, lazy-loaded, and inline background-image article candidates before capping the list. Re-running the stored snapshot now returns `https://pbs.twimg.com/media/HJ4WUQpaMAEcEkw?format=jpg&name=medium` with `sourceType=tweet`, `extractor=browser_snapshot`, and `publishedAt=2026-06-03T12:41:56.000Z`."
+        }
+      ],
+      "next": "Structured `PageSnapshot.imageCandidates` now carry dimensions/source/context for server-side cover scoring; future work can add manual cover override/remove in the library UI if users need editorial control."
+    },
+    {
+      "id": "library-ui-theme-detail-refresh",
+      "title": "Refresh library UI theme, cards, scrolling, and fixed detail panel",
+      "status": "done",
+      "scope": [
+        "Apply the requested shadcn theme preset direction to the web client while preserving Hunter's dark reading-desk identity.",
+        "Use neutral macOS-style scrollbars and prevent page-level overscroll white flashes on the dark app shell.",
+        "Refine library item card sizing, selected border treatment, cover presentation, and responsive auto-fill grid behavior.",
+        "Keep the desktop library list as the only scrollable middle pane instead of scrolling the whole page.",
+        "Keep a fixed desktop detail panel in the right column so the middle grid has a stable width.",
+        "Select the first visible item by default after loading or filtering.",
+        "Render a refined right-panel empty state when the current view has no selected item or no matches.",
+        "Keep the mobile detail Sheet closed until the user taps a card.",
+        "Do not render placeholder covers when an item has no real cover image; use synchronized no-cover card and detail layouts instead.",
+        "Render the middle library as a masonry column layout so item cards can use natural, content-driven heights.",
+        "Stabilize fast local loading by delaying skeleton reveal when existing content is available and enforcing a minimum visible duration once skeleton appears.",
+        "Add refined panel, item card, and no-cover detail header surface gradients to give the dark reading desk more visual depth without recoloring neutral scrollbars.",
+        "Keep the desktop shell free of a visible app header and remove the left-sidebar brand/logo row so the interface starts with the working navigation and library content.",
+        "Add an elegant persisted desktop sidebar collapse/expand interaction where collapse removes the sidebar column entirely and expansion remains available from a left-top window control slot beside the native macOS traffic-light area."
+      ],
+      "outOfScope": [
+        "Changing capture, recognition, repository, extension, or API behavior.",
+        "Introducing theme-colored scrollbars; the scrollbar treatment remains neutral and macOS-like.",
+        "Adding live external visual fixtures beyond the deterministic local visual golden journey."
+      ],
+      "dependencies": ["platform-visual-baseline-diff"],
+      "definitionOfDone": [
+        "`pnpm lint` passes.",
+        "`pnpm exec vite build` passes.",
+        "`pnpm golden:visual` proves default first-item detail, desktop internal pane scrolling, sidebar collapse/expand behavior, right-panel empty state, no desktop mobile-dialog leak, and mobile sheet detail still work.",
+        "Darwin visual baselines are refreshed after manual screenshot review."
+      ],
+      "verification": [
+        {
+          "command": "pnpm lint",
+          "proves": "The UI refresh keeps the zero-warning frontend lint gate clean."
+        },
+        {
+          "command": "pnpm exec vite build",
+          "proves": "The Vite web client builds after the theme, layout, and fixed detail panel changes."
+        },
+        {
+          "command": "pnpm golden:visual",
+          "proves": "The deterministic desktop and mobile visual journey passes with default desktop detail, empty-state coverage, mobile Sheet coverage, and no page-level overflow."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-04",
+          "commands": [
+            "pnpm exec prettier --check src/pages/LibraryPage.tsx src/hooks/useLibrary.ts scripts/golden-visual.ts",
+            "pnpm exec prettier --check src/styles.css src/pages/LibraryPage.tsx src/components/LibrarySidebar.tsx src/components/ItemCard.tsx src/components/ItemDetail.tsx",
+            "pnpm exec prettier --check scripts/golden-visual.ts src/pages/LibraryPage.tsx src/components/LibrarySidebar.tsx src/components/FilterNav.tsx src/components/SourceFilterBadges.tsx src/components/MetricCard.tsx",
+            "pnpm exec prettier --check src/styles.css src/pages/LibraryPage.tsx src/components/LibraryToolbar.tsx src/components/LibrarySidebar.tsx scripts/golden-visual.ts scripts/golden-browser.ts scripts/golden-extension.ts",
+            "pnpm check",
+            "pnpm lint",
+            "pnpm exec vite build",
+            "pnpm golden:visual:update",
+            "pnpm golden:visual",
+            "pnpm golden:browser",
+            "pnpm golden:extension"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "components.json",
+            "index.html",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/components/Cover.tsx",
+            "src/components/FilterNav.tsx",
+            "src/components/ItemCard.tsx",
+            "src/components/LibraryGrid.tsx",
+            "src/components/LibrarySidebar.tsx",
+            "src/components/LibraryToolbar.tsx",
+            "src/components/LoadingGrid.tsx",
+            "src/components/MetricCard.tsx",
+            "src/components/SourceFilterBadges.tsx",
+            "src/hooks/useLibrary.ts",
+            "src/lib/cover.ts",
+            "src/pages/LibraryPage.tsx",
+            "scripts/golden-visual.ts",
+            "tests/visual-baselines/darwin-arm64/desktop-library.png",
+            "tests/visual-baselines/darwin-arm64/mobile-library.png",
+            "tests/visual-baselines/darwin-arm64/mobile-detail.png"
+          ],
+          "mockBoundary": "The visual journey seeds one deterministic ready snapshot item through the local API and renders it in Playwright. It does not fetch live websites, does not exercise extension capture, and does not change source recognition behavior.",
+          "notes": "Desktop detail is now a fixed right-column panel, and the first visible item is selected automatically after load/filter changes. The panel renders a designed empty state when the view has no item to show. Items without real cover images no longer render Sparkles placeholder covers; no-cover cards use natural content-driven height inside a masonry column layout, and the right detail panel uses a matching title information block. Fast local loading now uses a 120ms delayed skeleton reveal when current content can remain visible, plus a 420ms minimum visible duration once skeleton is shown. The dark shell now uses matching panel/card/no-cover-detail gradients that add depth while keeping scrollbars neutral macOS-style. The visible desktop app header and the left-sidebar Hunter logo/title row were removed; the interface now reserves a transparent left-top window control slot for native macOS traffic lights and the sidebar collapse/expand control. In expanded state the sidebar navigation starts below that control area; in collapsed state the middle content shifts below the same control area while the expand button stays at the same top-left coordinate. The desktop sidebar can collapse to a 0px column with persisted local state instead of becoming a mini icon rail; the left-top control restores the full 292px sidebar. Mobile keeps the Sheet detail path, isolated from desktop by a media query so desktop item selection does not open a hidden mobile dialog. The visual golden asserts no document-level vertical scrolling on desktop, asserts the sidebar disappears instead of exposing a mini menu, asserts left-top expand restores the sidebar, asserts the no-cover fixture does not render a `data-cover-image` element, asserts the no-cover card stays compact instead of regressing to a fixed tall card, and verifies the initial skeleton does not flash for only one frame."
+        }
+      ],
+      "next": "Generate linux-x64 visual baselines from a CI-compatible Linux environment if this UI refresh needs strict pixel comparison in GitHub Actions."
+    },
+    {
+      "id": "extractor-body-jsonld",
+      "title": "Extension extractor must capture JSON-LD scripts from <body>, not only <head>",
+      "status": "done",
+      "scope": [
+        "Change `serializeFocusedHtml` in `extension/src/extractor.js` to query `script[type='application/ld+json']` from the whole document instead of only `document.head`.",
+        "Lift the discovered JSON-LD scripts into the serialized `<head>` so they are positioned before the truncatable body and survive the 180KB snapshot cap.",
+        "Cover the regression with a deterministic extension extractor test using a body-side JSON-LD plus a huge filler body that would otherwise be cut off by the snapshot cap."
+      ],
+      "outOfScope": [
+        "Raising the 180KB snapshot cap (positioning JSON-LD into <head> is the cheaper structural fix).",
+        "Server-side recovery of missing JSON-LD (the recognition pipeline already handles every JSON-LD shape correctly once the snapshot delivers it).",
+        "Reprocessing previously-saved items whose stored snapshot already lost the JSON-LD; users must re-save after reloading the extension."
+      ],
+      "dependencies": ["cover-image-https-upgrade", "video-structured-metadata"],
+      "definitionOfDone": [
+        "Real B站 page (BV1iqVm68EFa) end-to-end produces `coverImage` from VideoObject.thumbnailUrl (189×107 jpg) instead of og:image (100×100 png) and surfaces `publishedAt` from VideoObject.uploadDate.",
+        "`pnpm test:extension` asserts body-side JSON-LD is lifted into the serialized <head> and the VideoObject node text survives.",
+        "`pnpm test`, `pnpm lint`, `pnpm check`, `pnpm smoke:api`, `pnpm test:recognition` all pass."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:extension",
+          "proves": "Extractor lifts body-side JSON-LD scripts into the serialized <head> while still respecting the 180KB snapshot cap."
+        },
+        {
+          "command": "pnpm test",
+          "proves": "Full unit suite — including recognition and cover fixtures — continues to pass on top of the extractor change."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm test:extension", "pnpm check", "pnpm lint", "pnpm test", "pnpm smoke:api"],
+          "result": "passed",
+          "artifacts": [
+            "extension/src/extractor.js",
+            "extension/tests/extractor.test.ts",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "The bug was diagnosed by reading the persisted captureInput.snapshot.html of a real B站 save (BV1iqVm68EFa): snapshot html length was exactly 180000 (capped) and contained no `application/ld+json` at all, while `curl` of the same URL revealed the VideoObject JSON-LD script lives at byte position 164k IN BODY, well after </head> at byte position 97k. After lifting body-side JSON-LD into the serialized <head>, the same B站 HTML run through the actual extractor produces a 73KB snapshot containing the VideoObject node, and the recognition pipeline returns the JSON-LD thumbnailUrl (https-upgraded) as coverImage and the VideoObject uploadDate as publishedAt. `pnpm verify` was not re-run end-to-end in this session because the user's `pnpm dev` was still running and `pnpm golden:extension` cannot acquire its own Chrome+server fixture while the dev watcher is alive; all unit and smoke gates pass.",
+          "notes": "Without this fix, B站 (and any other SPA that injects schema.org metadata into body) silently degraded to og:image (a 100×100 site-default thumbnail) and lost publishedAt entirely, even though the server-side form-aware picker was correct. The fix is a one-function edit in the extension extractor; recognition code is unchanged. Users with existing degraded items must reload the extension (`chrome://extensions` → reload) and re-save the affected pages, because the previously-stored captureInput snapshot still has no JSON-LD and is not recoverable through `/api/items/:id/enrich`."
+        }
+      ],
+      "next": "Consider raising or making the 180KB snapshot cap content-aware (e.g., always preserve all <script type='application/ld+json'> regardless of cap) so future structural metadata never depends on positioning luck."
+    },
+    {
+      "id": "cover-image-https-upgrade",
+      "title": "Upgrade http cover image URLs to https when captured page is https",
+      "status": "done",
+      "scope": [
+        "Mirror the browser's mixed-content policy in `selectCoverImage`: when the captured page is https, automatically upgrade any http image URL (preferred / og:image / snapshot candidate) to https before returning it.",
+        "Plumb the page URL's protocol through `selectCoverImage` → `normalizeUsefulImageUrl` so every selection path (preferred, html, candidates) is covered.",
+        "Keep http→http behavior intact for pages captured over http; do not force https for sites the user explicitly captured over http."
+      ],
+      "outOfScope": [
+        "Rewriting image URLs for hosts that genuinely only support http (the worst case is identical to today: a broken cover).",
+        "Validating that the upgraded https URL actually returns 200 (would require a network round-trip per save).",
+        "Frontend changes to the Cover component (the upgrade happens at recognition time so the stored URL is already safe)."
+      ],
+      "dependencies": ["video-structured-metadata"],
+      "definitionOfDone": [
+        "Real B站 video page (VideoObject.thumbnailUrl is http://) yields an https coverImage in the API response.",
+        "`pnpm test:cover` covers the upgrade for preferred, og:image, and snapshot-candidate paths, plus a guard that http pages keep http.",
+        "`pnpm verify` passes end-to-end."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:cover",
+          "proves": "Deterministic unit tests assert https upgrade across all cover selection paths and that http pages are not over-corrected."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "The mixed-content guard does not regress any other gate (recognition fixtures, source contracts, golden journeys, build)."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm test:cover", "pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/sources/coverImage.ts",
+            "server/tests/coverImage.test.ts",
+            ".prettierignore",
+            "tests/visual-baselines/darwin-arm64/mobile-library.png",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "The fix was confirmed against a real bilibili.com snapshot fetched out-of-band (B站's JSON-LD VideoObject.thumbnailUrl is emitted as http://i2.hdslb.com/...; the upgraded https URL on the same CDN returns 200 OK). No live fetch happens at recognition time. The visual baseline `mobile-library.png` was refreshed because prettier compliance on `src/components/SettingsPanel.tsx` (a refactor-owned file) shifted rendering by ~10 pixels; verified deterministic across three runs before bumping. `.prettierignore` was extended to exclude legacy Rust desktop build artifacts so prettier no longer chokes on binary assets generated by desktop builds.",
+          "notes": "Root cause: B站 (and many other CDN-fronted sites) emit thumbnail URLs over http in their structured metadata, but the Hunter web client runs on https. The browser's mixed-content policy silently blocks the http image, leaving the cover slot empty even though everything upstream was correct. Mirroring that policy server-side at capture time keeps the stored URL renderable wherever Hunter is hosted."
+        }
+      ],
+      "next": "Consider applying the same https-upgrade pass to `favicon` and to `contentHtml` <img> sources so embedded article images do not get blocked on https deployments."
+    },
+    {
+      "id": "video-structured-metadata",
+      "title": "Surface VideoObject author, upload date, and thumbnail from snapshot JSON-LD",
+      "status": "done",
+      "scope": [
+        "Extend the shared JSON-LD module with a form-aware node picker (`pickJsonLdNodeForForm`) and an ISO 8601 duration parser.",
+        "Make Generic Web extraction read VideoObject (and AudioObject) JSON-LD nodes when the Content Form Detector identifies the page as video or audio.",
+        "Prefer the form-shaped node's `author`, `uploadDate`, and `thumbnailUrl` over Defuddle's site-level author and over generic og:image fallbacks.",
+        "Keep precedence honest: VideoObject author beats Defuddle author, but the Article-shaped picker and existing metadata behavior remain intact when the page is not video/audio.",
+        "Add deterministic unit tests for the JSON-LD form picker, the @graph flattening, and the ISO 8601 duration parser."
+      ],
+      "outOfScope": [
+        "Adding `duration` as a first-class `LibraryItem` field (the parser exists but no schema change is included here).",
+        "Following oEmbed discovery links or any other third-party fetch (the new architecture is snapshot-only).",
+        "Extending `SourceType` to include audio/discussion/product as first-class categories.",
+        "Modifying the externally-refactored connector, captureEvents, or repository modules that are in flight."
+      ],
+      "dependencies": ["content-form-detector"],
+      "definitionOfDone": [
+        "`pnpm test:jsonld` covers `@graph` flattening, multi-type nodes, form-aware node selection, and ISO 8601 duration parsing.",
+        "`pnpm test:content-form` continues to pass without modification.",
+        "`pnpm test:recognition` proves the Bilibili-shaped snapshot surfaces VideoObject `author`, `uploadDate`, and `thumbnailUrl` instead of the Defuddle site-level author and the generic og:image fallback.",
+        "ESLint runs cleanly on the changed source and test files at zero warnings."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:jsonld",
+          "proves": "Form-aware JSON-LD picker, @graph flattening, multi-type node handling, and ISO 8601 duration parsing are deterministic."
+        },
+        {
+          "command": "pnpm test:content-form",
+          "proves": "Content Form Detector behavior remains unchanged after the JSON-LD module refactor."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Generic web recognition surfaces VideoObject author, uploadDate, and thumbnailUrl for video-shaped snapshots without regressing article behavior."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": [
+            "pnpm test:jsonld",
+            "pnpm test:content-form",
+            "pnpm test:recognition",
+            "pnpm exec eslint --max-warnings=0 server/sources/{contentForm,jsonLd,genericWeb}.ts server/tests/{contentForm,jsonLd,recognition}.test.ts"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "server/sources/jsonLd.ts",
+            "server/sources/genericWeb.ts",
+            "server/tests/jsonLd.test.ts",
+            "server/tests/recognition.test.ts",
+            "package.json",
+            "docs/CONTENT_RECOGNITION.md"
+          ],
+          "mockBoundary": "All extraction is deterministic on the snapshot HTML the extension already provides. No external network calls were added. The targeted commands ran cleanly while a parallel snapshot-only refactor was in flight; once that refactor landed, the full `pnpm verify` re-ran without regressions.",
+          "notes": "Generic web extraction now consults a form-aware JSON-LD picker. Video and audio pages surface their structured uploader name, upload date, and thumbnail ahead of page-wide Defuddle/og fallbacks. Article and unknown forms retain the previous Article-shaped picker behavior. The ISO 8601 duration parser is in place for a future slice that promotes `duration` to a first-class `LibraryItem` field."
+        },
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm verify"],
+          "result": "passed",
+          "artifacts": [
+            "server/sources/jsonLd.ts",
+            "server/sources/genericWeb.ts",
+            "server/tests/jsonLd.test.ts",
+            "server/tests/recognition.test.ts",
+            "package.json",
+            "docs/CONTENT_RECOGNITION.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Full local verify gate executed against the merged workspace (snapshot-only refactor + this slice). All ten steps passed: harness:init, check, lint, format:check, test, smoke:api, golden:browser, golden:extension, golden:visual, build. The only adjustments needed were two whitespace-only Prettier auto-fixes (`extension/src/popup.js` and `extension/src/queue.js`) inherited from the popup-restyle and offline-queue features; no user-facing strings or behavior changed.",
+          "notes": "Confirms the form-aware JSON-LD picker integrates cleanly with the snapshot-only architecture across the full Playwright-backed gate."
+        }
+      ],
+      "next": "Extend `SourceType` and `LibraryItem` to carry video duration so the parsed seconds can render as a duration badge; or do the audio Content Form integration analogous to video."
+    },
+    {
+      "id": "content-form-detector",
+      "title": "Detect page content form from structured signals instead of host",
+      "status": "done",
+      "scope": [
+        "Add a pure Content Form Detector that reads Open Graph type, Twitter card, JSON-LD @type, oEmbed discovery link, and video element presence.",
+        "Share JSON-LD walking helpers between Generic Web extraction and the Content Form Detector.",
+        "Promote `sourceType` to `video` inside Generic Web only when URL routing fell into the generic article bucket and structured signals declare the page as video.",
+        "Keep host-routed adapters (Feishu, X, PDF, YouTube/Vimeo oEmbed) authoritative and unchanged.",
+        "Explain promoted video pages with an honest source message: public metadata captured, transcripts/comments still require a future connector."
+      ],
+      "outOfScope": [
+        "Adding new host-specific adapters such as Bilibili.",
+        "Following oEmbed discovery links to call third-party oEmbed endpoints.",
+        "Extending `SourceType` to add audio/discussion/product as first-class library categories.",
+        "Rewriting Source Adapter routing to consult the detector before host matching."
+      ],
+      "dependencies": ["capture-public-url", "source-adapter-contract-validation"],
+      "definitionOfDone": [
+        "`pnpm test:content-form` covers og:type, JSON-LD VideoObject/PodcastEpisode/Article/Product/DiscussionForumPosting, oEmbed discovery, and conflicting signals.",
+        "`pnpm test:recognition` proves a Bilibili-style `og:type=video.other` snapshot is captured with `sourceType: video`, and a normal article that merely embeds `<video>` is not promoted.",
+        "`pnpm verify` passes with the Content Form Detector included."
+      ],
+      "verification": [
+        {
+          "command": "pnpm test:content-form",
+          "proves": "The deterministic Content Form Detector classifies video, audio, article, discussion, product, and unknown shapes from structural signals."
+        },
+        {
+          "command": "pnpm test:recognition",
+          "proves": "Generic web recognition promotes `sourceType` to `video` for video-shaped pages without misclassifying articles that embed `<video>`."
+        },
+        {
+          "command": "pnpm verify",
+          "proves": "Content Form detection remains compatible with the full local verification gate."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-03",
+          "commands": ["pnpm check", "pnpm lint", "pnpm test", "pnpm smoke:api", "pnpm build"],
+          "result": "passed",
+          "artifacts": [
+            "server/sources/contentForm.ts",
+            "server/sources/jsonLd.ts",
+            "server/sources/genericWeb.ts",
+            "server/tests/contentForm.test.ts",
+            "server/tests/recognition.test.ts",
+            "package.json",
+            "docs/CONTENT_RECOGNITION.md",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Tests assert deterministic detector behavior on synthetic DOM fixtures and a Bilibili-shaped snapshot. They do not fetch live external sites, do not follow oEmbed discovery endpoints to third parties, and do not yet promote audio/discussion/product Content Forms to new `SourceType` values. Playwright golden journeys (`pnpm golden:browser`, `pnpm golden:extension`, `pnpm golden:visual`) and `pnpm format:check` were not executed in this slice because the local environment lacked installed Playwright browser binaries and the repository had pre-existing Prettier drift in `assets/brand/preview.html`, `server/sources/coverImage.ts`, and `server/tests/coverImage.test.ts` unrelated to this change; the hosted CI workflow remains the authoritative gate for those steps.",
+          "notes": "Added a pure Content Form Detector and shared JSON-LD walking helper. Generic Web extraction now promotes `sourceType` to `video` when URL routing falls into the generic article bucket and structural signals declare a video form; host-routed adapters (Feishu, X, PDF, YouTube/Vimeo) remain authoritative. Source message clearly states that public metadata was captured for promoted video pages while transcripts/comments still require a future source-specific connector."
+        }
+      ],
+      "next": "Add a follow-up slice that drives an oEmbed provider registry and oEmbed self-discovery so well-known video hosts (Bilibili, SoundCloud) get richer metadata without per-host code."
+    },
     {
       "id": "harness-foundation",
       "title": "Repository Harness v0 foundation",
@@ -50,11 +925,11 @@
     },
     {
       "id": "capture-public-url",
-      "title": "Capture public web URLs honestly",
+      "title": "Capture public web pages from the browser snapshot",
       "status": "done",
       "scope": [
-        "Public article URL or snapshot routes through the generic web source adapter.",
-        "Readable content reaches `ready` when enough text is captured.",
+        "Public article snapshots route through the generic web source adapter.",
+        "Readable content reaches `ready` when enough snapshot text is captured.",
         "Metadata-only capture remains `partial` and does not pretend to be full content."
       ],
       "outOfScope": ["Full browser E2E", "Production persistence migration"],
@@ -87,18 +962,16 @@
     },
     {
       "id": "capture-feishu-url",
-      "title": "Capture Feishu URLs without fake success",
+      "title": "Capture Feishu pages from the browser snapshot",
       "status": "done",
       "scope": [
-        "URL-only Feishu capture returns `needs_connector`.",
         "Browser snapshot Feishu capture returns `ready` when substantial visible text is available.",
         "Browser snapshot Feishu capture returns `partial` when visible text is limited.",
-        "User-facing source message explains the required capture path and connector limits."
+        "User-facing source message explains the capture quality without fabricating content."
       ],
-      "outOfScope": ["Feishu OAuth connector", "Exact block import", "Attachment sync"],
+      "outOfScope": ["Native Feishu block import", "Attachment sync"],
       "dependencies": [],
       "definitionOfDone": [
-        "Tests assert `needs_connector` for URL-only Feishu links.",
         "Tests assert `partial` and `ready` Feishu browser snapshot states.",
         "Tests assert sanitized Canonical Content HTML for Feishu browser snapshots."
       ],
@@ -118,22 +991,21 @@
           "notes": "Feishu URL-only capture returns needs_connector. Limited visible snapshot content remains partial. Substantial visible snapshot content becomes ready with browser_snapshot provenance and sanitized Canonical Content HTML."
         }
       ],
-      "next": "Add Feishu OAuth only after native block import and permission-sync requirements are specified."
+      "next": "Add snapshot-based Feishu block fidelity only after native block representations are specified."
     },
     {
       "id": "capture-x-url",
-      "title": "Capture X URLs and browser fallbacks",
+      "title": "Capture X posts from selected text and browser snapshots",
       "status": "done",
       "scope": [
-        "Public X URLs use oEmbed when available.",
-        "Selected text fallback returns `partial` with browser snapshot provenance.",
+        "Selected text fallback returns `partial` with browser_selection provenance.",
         "Browser snapshot X capture returns `ready` when substantial visible post text is available.",
-        "Unresolved X posts and oEmbed failures disclose connector/API limits."
+        "Shallow snapshots disclose the limitation through `sourceMessage` instead of fabricating content."
       ],
-      "outOfScope": ["X OAuth", "Bookmark sync", "Thread expansion"],
+      "outOfScope": ["Bookmark sync", "Thread expansion"],
       "dependencies": [],
       "definitionOfDone": [
-        "Source contract test covers oEmbed success, selected-text fallback, browser snapshot fallback, and oEmbed failure without live X dependency."
+        "Source contract test covers selected-text and browser snapshot recognition without any live X or oEmbed dependency."
       ],
       "verification": [
         {
@@ -151,7 +1023,7 @@
           "notes": "Public oEmbed can produce ready tweet content. Selected text remains browser_snapshot provenance. Open-page X snapshots can produce ready Canonical Content HTML. oEmbed network failure degrades to needs_connector instead of failing the item."
         }
       ],
-      "next": "Add live oEmbed regression only if it can be made stable."
+      "next": "Add snapshot-driven thread/quote expansion only after snapshot capture covers them deterministically."
     },
     {
       "id": "refresh-recognition",
@@ -360,7 +1232,7 @@
     {
       "id": "bounded-html-fetch",
       "title": "Bound public HTML fetch before parsing",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Move generic web public fetch into a dedicated HTML Fetch module.",
         "Reject non-HTML public responses before JSDOM, Defuddle, or Readability work.",
@@ -401,7 +1273,7 @@
           "notes": "Generic web public URL capture no longer performs unbounded response.text() before parsing. HTML fetch now checks HTTP status, accepted content types, declared content length, and streamed byte count before handing data to JSDOM, Defuddle, or Readability."
         }
       ],
-      "next": "Add per-domain concurrency and fetch telemetry after live capture metrics exist."
+      "next": "Cancelled 2026-06-03: server-side HTML fetch was removed when capture became browser-snapshot only; recognition now reads only the snapshot the extension delivers."
     },
     {
       "id": "sandboxed-reader-html",
@@ -745,7 +1617,7 @@
       "verification": [
         {
           "command": "pnpm golden:extension",
-          "proves": "A real installed MV3 extension can capture the active page through its background path and save it into Huntter."
+          "proves": "A real installed MV3 extension can capture the active page through its background path and save it into Hunter."
         },
         {
           "command": "pnpm verify",
@@ -1006,7 +1878,7 @@
         "`pnpm golden:visual:update` creates platform baseline PNGs.",
         "`pnpm golden:visual` compares screenshots against committed baseline PNGs when present.",
         "`pnpm check` and `pnpm lint` pass after visual diff changes.",
-        "Missing platform baselines require explicit `HUNTTER_VISUAL_ALLOW_MISSING_BASELINE=true` to avoid failing."
+        "Missing platform baselines require explicit `HUNTER_VISUAL_ALLOW_MISSING_BASELINE=true` to avoid failing."
       ],
       "verification": [
         {
@@ -1045,7 +1917,7 @@
             "package.json",
             "pnpm-lock.yaml"
           ],
-          "mockBoundary": "The committed baseline set currently covers win32-x64. GitHub Actions temporarily sets `HUNTTER_VISUAL_ALLOW_MISSING_BASELINE=true` until a linux-x64 baseline can be generated in an environment with Playwright system dependencies.",
+          "mockBoundary": "The committed baseline set currently covers win32-x64. GitHub Actions temporarily sets `HUNTER_VISUAL_ALLOW_MISSING_BASELINE=true` until a linux-x64 baseline can be generated in an environment with Playwright system dependencies.",
           "notes": "Visual golden now uses pixelmatch and pngjs to compare screenshots against platform baselines with zero allowed pixel difference by default. Dynamic dates and durations remain visible to users but are hidden during screenshots through explicit `data-visual-dynamic` markers."
         }
       ],
@@ -1106,7 +1978,7 @@
     {
       "id": "connector-state-control",
       "title": "Control connector state without fake sync",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Add API mutations for connector state updates and disconnects.",
         "Add a connector sync endpoint that fails explicitly for disconnected or planned providers.",
@@ -1169,12 +2041,12 @@
           "notes": "The API can now update and clear connector state, and sync requests return explicit `409`/`501` responses when a provider is disconnected or still planned. The sidebar shows local connection state and planned availability separately, adds manual Sync/Disconnect controls, and uses scrollable non-shrinking sections so Capture and connector controls are not clipped."
         }
       ],
-      "next": "Implement the first real connector only after OAuth scopes, token storage, and provider-specific import semantics are specified."
+      "next": "Cancelled 2026-06-03: Hunter now captures every Saved Item through the browser extension snapshot, so connector state, OAuth, and sync controls are no longer part of the product."
     },
     {
       "id": "feishu-oauth-foundation",
       "title": "Authorize Feishu and store connector tokens safely",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Add Feishu OAuth start and callback endpoints.",
         "Generate short-lived OAuth state and PKCE authorization parameters.",
@@ -1263,12 +2135,12 @@
           "notes": "Feishu uses the current official OAuth authorize and token endpoints, stores short-lived OAuth state in memory with PKCE verifier data, and writes only AES-GCM sealed tokens through server-only repository credential methods. The web panel opens OAuth with a manual Connect action and still relies on Reload after callback completion."
         }
       ],
-      "next": "Use the stored Feishu user access token to implement document-id extraction and raw-content import for saved Feishu URL-only items."
+      "next": "Cancelled 2026-06-03: capture now flows through the browser extension snapshot, so Feishu OAuth, encrypted token storage, and connector callbacks were removed."
     },
     {
       "id": "feishu-docx-raw-content-sync",
       "title": "Import direct Feishu docx raw content on manual sync",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Extract direct `/docx/{document_id}` tokens from saved Feishu URLs.",
         "Use encrypted Feishu connector credentials only on the server.",
@@ -1331,12 +2203,12 @@
           "notes": "Manual Feishu sync now scans saved Feishu connector-needed items, imports direct docx raw content through the decrypted server-side user access token, rebuilds the item with connector provenance, and records a connector Capture Event whose response omits raw document text."
         }
       ],
-      "next": "Add Feishu wiki token resolution and token refresh before broadening sync coverage."
+      "next": "Cancelled 2026-06-03: server-side Feishu raw-content import was removed when capture became browser-snapshot only."
     },
     {
       "id": "feishu-wiki-docx-resolution",
       "title": "Resolve Feishu wiki URLs to docx raw content",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Extract `/wiki/{node_token}` tokens from saved Feishu URLs.",
         "Resolve wiki nodes through the official Feishu wiki get_node API using the encrypted server-side user access token.",
@@ -1397,12 +2269,12 @@
           "notes": "Manual Feishu sync now scans saved Feishu connector-needed items, resolves wiki node tokens to docx object tokens when possible, imports the resolved docx raw content through the decrypted server-side user access token, uses the resolved node title, and records connector Capture Events without raw document text."
         }
       ],
-      "next": "Add Feishu token refresh and block/image/attachment import before broadening sync coverage."
+      "next": "Cancelled 2026-06-03: Feishu wiki node resolution was part of the removed connector import path."
     },
     {
       "id": "feishu-token-refresh-before-sync",
       "title": "Refresh Feishu access tokens before manual sync",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Detect expired or near-expired Feishu access tokens before manual connector sync.",
         "Use the stored encrypted refresh token with the official OAuth token endpoint.",
@@ -1462,12 +2334,12 @@
           "notes": "Manual Feishu sync now asks the OAuth module for a fresh access token. Expired or near-expired stored access tokens are refreshed through the official OAuth token endpoint, new one-time refresh tokens replace old encrypted credentials, and provider imports continue with the refreshed access token."
         }
       ],
-      "next": "Add Feishu block/image/attachment import and permission refresh before broadening sync coverage."
+      "next": "Cancelled 2026-06-03: Feishu OAuth token refresh was removed with the rest of the connector path."
     },
     {
       "id": "feishu-legacy-doc-raw-content-sync",
       "title": "Import Feishu legacy doc raw content on manual sync",
-      "status": "done",
+      "status": "cancelled",
       "scope": [
         "Extract direct legacy `/docs/{docToken}` and `/doc/{docToken}` tokens from saved Feishu URLs.",
         "Resolve wiki nodes with `obj_type: doc` to legacy document tokens.",
@@ -1527,7 +2399,7 @@
           "notes": "Manual Feishu sync now recognizes legacy docs URLs and wiki nodes resolving to `doc`, fetches old document raw text through the official doc v2 endpoint, rebuilds saved items with connector provenance, and keeps raw document text out of Capture Events."
         }
       ],
-      "next": "Add Feishu block/image/attachment import and permission refresh before broadening sync coverage."
+      "next": "Cancelled 2026-06-03: Feishu legacy doc raw-content sync was part of the removed connector import path."
     }
   ]
 }

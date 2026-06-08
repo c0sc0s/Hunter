@@ -1,13 +1,17 @@
 {
-  "name": "huntter",
+  "name": "hunter",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
-    "dev:web": "vite --host 127.0.0.1 --port 5173",
-    "dev:api": "tsx watch server/index.ts",
+    "dev": "tsx electron/dev.mjs",
+    "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "server:bundle": "node scripts/bundle-server.mjs",
+    "electron": "electron .",
+    "electron:build": "pnpm build && pnpm server:bundle && electron-builder",
+    "electron:dir": "pnpm build && pnpm server:bundle && electron-builder --dir",
     "build": "tsc --noEmit && vite build",
     "start": "node dist-server/index.js",
     "check": "tsc --noEmit",
@@ -20,22 +24,33 @@
     "golden:extension": "tsx scripts/golden-extension.ts",
     "golden:visual": "tsx scripts/golden-visual.ts",
     "golden:visual:update": "tsx scripts/golden-visual.ts --update-baselines",
-    "test": "pnpm test:url && pnpm test:metadata && pnpm test:timing && pnpm test:capture-events && pnpm test:capture-input && pnpm test:quality && pnpm test:signals && pnpm test:html && pnpm test:html-fetch && pnpm test:cover && pnpm test:contract && pnpm test:connector-secrets && pnpm test:recognition && pnpm test:source-contracts && pnpm test:extension && pnpm test:repository",
+    "test": "pnpm test:url && pnpm test:listen && pnpm test:data-dir && pnpm test:data-dir-lock && pnpm test:store-atomic && pnpm test:metadata && pnpm test:timing && pnpm test:capture-events && pnpm test:capture-input && pnpm test:quality && pnpm test:signals && pnpm test:agent && pnpm test:html && pnpm test:cover && pnpm test:contract && pnpm test:content-form && pnpm test:jsonld && pnpm test:recognition && pnpm test:source-contracts && pnpm test:snapshot-required && pnpm test:extension && pnpm test:content-support && pnpm test:cover-preview && pnpm test:queue && pnpm test:save-actions && pnpm test:api-base && pnpm test:repository",
     "test:url": "tsx server/tests/url.test.ts",
+    "test:listen": "tsx --test server/tests/listen.test.ts",
+    "test:data-dir": "tsx --test server/tests/dataDir.test.ts",
+    "test:data-dir-lock": "tsx --test server/tests/dataDirLock.test.ts",
+    "test:store-atomic": "tsx --test server/tests/storeAtomicWrite.test.ts",
     "test:metadata": "tsx server/tests/recognitionMetadata.test.ts",
     "test:timing": "tsx server/tests/recognitionTiming.test.ts",
     "test:capture-events": "tsx server/tests/captureEvents.test.ts",
     "test:capture-input": "tsx server/tests/captureInput.test.ts",
     "test:quality": "tsx server/tests/contentQuality.test.ts",
     "test:signals": "tsx server/tests/contentSignals.test.ts",
+    "test:agent": "tsx server/tests/agentLocalLlm.test.ts",
     "test:html": "tsx server/tests/contentHtml.test.ts",
-    "test:html-fetch": "tsx server/tests/htmlFetch.test.ts",
     "test:cover": "tsx server/tests/coverImage.test.ts",
     "test:contract": "tsx server/tests/extractedContentContract.test.ts",
-    "test:connector-secrets": "tsx server/tests/connectorSecretBox.test.ts",
+    "test:content-form": "tsx server/tests/contentForm.test.ts",
+    "test:jsonld": "tsx server/tests/jsonLd.test.ts",
     "test:recognition": "tsx server/tests/recognition.test.ts",
     "test:source-contracts": "tsx server/tests/sourceContracts.test.ts",
+    "test:snapshot-required": "tsx server/tests/snapshotRequired.test.ts",
     "test:extension": "tsx extension/tests/extractor.test.ts",
+    "test:content-support": "tsx --test extension/tests/contentSupport.test.ts",
+    "test:cover-preview": "tsx --test extension/tests/coverPreview.test.ts",
+    "test:queue": "tsx --test extension/tests/queue.test.ts",
+    "test:save-actions": "tsx --test extension/tests/saveActions.test.ts",
+    "test:api-base": "tsx --test extension/tests/apiBase.test.ts",
     "test:repository": "tsx server/tests/sqliteRepository.test.ts",
     "verify": "pnpm harness:init && pnpm check && pnpm lint && pnpm format:check && pnpm test && pnpm smoke:api && pnpm golden:browser && pnpm golden:extension && pnpm golden:visual && pnpm build",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
@@ -43,6 +58,8 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource-variable/outfit": "^5.2.7",
+    "@fontsource-variable/roboto-slab": "^5.2.8",
+    "@formkit/auto-animate": "^0.9.0",
     "@mozilla/readability": "^0.6.0",
     "@tailwindcss/vite": "^4.3.0",
     "class-variance-authority": "^0.7.1",
@@ -75,11 +92,16 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "chokidar": "^5.0.0",
     "concurrently": "^9.1.0",
+    "electron": "^42.3.3",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.4.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17.6.0",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.60.0",
@@ -89,5 +111,52 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.60.1",
     "vite": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.hunter.app",
+    "productName": "Hunter",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/resources/server.cjs",
+        "to": "server.cjs"
+      },
+      {
+        "from": "electron/resources/server.cjs.map",
+        "to": "server.cjs.map"
+      },
+      {
+        "from": "electron/resources/runtime/node_modules",
+        "to": "node_modules"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "electron/icons/icon.icns",
+      "identity": null,
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "icon": "electron/icons/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "electron/icons/icon.png",
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }

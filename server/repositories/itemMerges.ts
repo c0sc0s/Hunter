@@ -1,7 +1,7 @@
 import type { CreateItemInput, LibraryItem, UpdateItemInput } from "../../shared/types";
 import { normalizeTags } from "../tags";
 
-export const queuedMessage = "Saved. Huntter is extracting content in the background.";
+export const queuedMessage = "Saved. Hunter is extracting content in the background.";
 
 export function mergeQueuedItem(previous: LibraryItem, queued: LibraryItem, input: CreateItemInput): LibraryItem {
   const captureInput = chooseCaptureInput(previous.captureInput, queued.captureInput);
@@ -59,10 +59,5 @@ export function markRecognitionFailedItem(previous: LibraryItem, error: unknown)
 }
 
 function chooseCaptureInput(previous: LibraryItem["captureInput"], incoming: LibraryItem["captureInput"]): LibraryItem["captureInput"] {
-  if (hasSnapshot(incoming)) return incoming;
-  return previous ?? incoming;
-}
-
-function hasSnapshot(input: LibraryItem["captureInput"]): boolean {
-  return Boolean(input?.snapshot);
+  return incoming ?? previous;
 }

@@ -1,14 +1,17 @@
 import type { LibraryItem, LibraryQuery } from "../../shared/types";
+import { itemAgentContentCategory } from "../agents/contentCategories";
 
 export const defaultLibraryLimit = 60;
 export const maxLibraryLimit = 120;
 
-export type NormalizedLibraryQuery = Required<Pick<LibraryQuery, "limit" | "offset">> & Pick<LibraryQuery, "filter" | "sourceType" | "q">;
+export type NormalizedLibraryQuery = Required<Pick<LibraryQuery, "limit" | "offset">> &
+  Pick<LibraryQuery, "filter" | "sourceType" | "agentCategoryId" | "q">;
 
 export function normalizeLibraryQuery(query: LibraryQuery = {}): NormalizedLibraryQuery {
   return {
     filter: query.filter && query.filter !== "all" ? query.filter : undefined,
     sourceType: query.sourceType,
+    agentCategoryId: normalizeCategoryId(query.agentCategoryId),
     q: normalizeSearch(query.q),
     limit: clampInteger(query.limit, defaultLibraryLimit, 1, maxLibraryLimit),
     offset: clampInteger(query.offset, 0, 0, Number.MAX_SAFE_INTEGER)
@@ -22,6 +25,7 @@ export function filterItems(items: LibraryItem[], query: NormalizedLibraryQuery)
     if (query.filter === "favorite" && !item.favorite) return false;
     if (query.filter && query.filter !== "favorite" && item.status !== query.filter) return false;
     if (query.sourceType && item.sourceType !== query.sourceType) return false;
+    if (query.agentCategoryId && itemAgentContentCategory(item)?.id !== query.agentCategoryId) return false;
     if (search && !searchText(item).includes(search)) return false;
     return true;
   });
@@ -32,7 +36,22 @@ export function pageItems<T>(items: T[], query: NormalizedLibraryQuery): T[] {
 }
 
 export function searchText(item: LibraryItem): string {
-  return [item.title, item.summary, item.excerpt, item.readableText, item.sourceName, item.note, item.author, ...item.tags]
+  const agent = item.agentClassification?.classification;
+  return [
+    item.title,
+    item.summary,
+    item.excerpt,
+    item.readableText,
+    item.sourceName,
+    item.note,
+    item.author,
+    agent?.contentCategory?.label,
+    agent?.contentCategory?.description,
+    agent?.summary,
+    ...(agent?.topics ?? []),
+    ...(agent?.keyPoints ?? []),
+    ...item.tags
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -48,6 +67,11 @@ export function buildPage(query: NormalizedLibraryQuery, total: number) {
 }
 
 function normalizeSearch(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized || undefined;
+}
+
+function normalizeCategoryId(value: string | undefined): string | undefined {
   const normalized = value?.replace(/\s+/g, " ").trim();
   return normalized || undefined;
 }

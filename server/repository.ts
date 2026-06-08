@@ -12,12 +12,24 @@ export const libraryRepository: LibraryRepository = {
     return (await resolveRepository()).findById(id);
   },
 
+  async listAgentCategories() {
+    return (await resolveRepository()).listAgentCategories();
+  },
+
+  async listAgentClassificationCandidates(limit) {
+    return (await resolveRepository()).listAgentClassificationCandidates(limit);
+  },
+
   async upsertQueued(item, input) {
     return (await resolveRepository()).upsertQueued(item, input);
   },
 
   async patch(id, input) {
     return (await resolveRepository()).patch(id, input);
+  },
+
+  async setAgentClassification(id, result) {
+    return (await resolveRepository()).setAgentClassification(id, result);
   },
 
   async delete(id) {
@@ -54,26 +66,6 @@ export const libraryRepository: LibraryRepository = {
 
   async listCaptureEvents(limit) {
     return (await resolveRepository()).listCaptureEvents(limit);
-  },
-
-  async listConnectors() {
-    return (await resolveRepository()).listConnectors();
-  },
-
-  async upsertConnector(record) {
-    return (await resolveRepository()).upsertConnector(record);
-  },
-
-  async getConnectorCredential(provider) {
-    return (await resolveRepository()).getConnectorCredential(provider);
-  },
-
-  async upsertConnectorCredential(record) {
-    return (await resolveRepository()).upsertConnectorCredential(record);
-  },
-
-  async deleteConnectorCredential(provider) {
-    return (await resolveRepository()).deleteConnectorCredential(provider);
   }
 };
 
@@ -82,11 +74,21 @@ async function resolveRepository(): Promise<LibraryRepository> {
   return repositoryPromise;
 }
 
+/**
+ * Default: SQLite. The adapter brings WAL journalling, busy-timeout retries,
+ * per-statement transactions, and crash-safe writes — none of which the JSON
+ * repository can offer. Multiple concurrent sidecars are still rejected at the
+ * dataDir-lock layer, but if one does slip through, SQLite's locking prevents
+ * the kind of "half-written file" corruption that bit us with the JSON store.
+ *
+ * Opt out with `HUNTER_REPOSITORY=json` for tests / scripts that explicitly
+ * want the file-based path (e.g. round-tripping a hand-edited snapshot).
+ */
 async function createRepository(): Promise<LibraryRepository> {
-  if (process.env.HUNTTER_REPOSITORY === "sqlite") {
-    const { createSqliteRepository } = await import("./repositories/sqliteRepository");
-    return createSqliteRepository();
+  if (process.env.HUNTER_REPOSITORY === "json") {
+    return createJsonRepository();
   }
 
-  return createJsonRepository();
+  const { createSqliteRepository } = await import("./repositories/sqliteRepository");
+  return createSqliteRepository();
 }

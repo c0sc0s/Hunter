@@ -19,9 +19,7 @@ const content = {
     </article>
   `,
   confidence: 0.9,
-  extractionState: "ready",
-  captureMethod: "extension_snapshot",
-  sourceAccess: "browser_snapshot"
+  extractionState: "ready"
 } satisfies ExtractedContent;
 
 const signals = buildContentSignals(content);

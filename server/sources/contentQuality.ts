@@ -6,8 +6,8 @@ export type ContentCandidateSource =
   | "defuddle"
   | "readability"
   | "pdf_text"
-  | "connector"
   | "browser_snapshot"
+  | "tweet_snapshot"
   | "metadata";
 
 export type ContentCandidate = {
@@ -30,8 +30,9 @@ const readyThresholds: Record<ContentCandidateSource, number> = {
   defuddle: 160,
   readability: 160,
   pdf_text: 160,
-  connector: 120,
   browser_snapshot: 240,
+  // Tweets are inherently short; a 280-character post can be a complete capture.
+  tweet_snapshot: 80,
   metadata: Number.POSITIVE_INFINITY
 };
 
@@ -40,8 +41,8 @@ const preferredOrder: ContentCandidateSource[] = [
   "defuddle",
   "readability",
   "pdf_text",
-  "connector",
   "browser_snapshot",
+  "tweet_snapshot",
   "metadata"
 ];
 
@@ -104,8 +105,7 @@ function isReady(source: ContentCandidateSource, text: string): boolean {
 function extractorFor(source: ContentCandidateSource): string {
   if (source === "selected_text") return "browser_selection";
   if (source === "pdf_text") return "unpdf";
-  if (source === "connector") return "connector";
-  if (source === "browser_snapshot") return "browser_snapshot";
+  if (source === "browser_snapshot" || source === "tweet_snapshot") return "browser_snapshot";
   return source;
 }
 
@@ -116,7 +116,7 @@ function confidenceFor(source: ContentCandidateSource, text: string): number {
   if (source === "defuddle") return 0.9;
   if (source === "readability") return 0.84;
   if (source === "pdf_text") return 0.78;
-  if (source === "connector") return 0.82;
   if (source === "browser_snapshot") return 0.62;
+  if (source === "tweet_snapshot") return 0.62;
   return 0.42;
 }

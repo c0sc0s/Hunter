@@ -1,7 +1,7 @@
 import type {
+  AgentClassificationResult,
+  AgentContentCategorySummary,
   CaptureEvent,
-  ConnectorRecord,
-  ConnectorView,
   CreateItemInput,
   LibraryItem,
   LibraryQuery,
@@ -24,22 +24,14 @@ export type RecognitionJob = {
   updatedAt: string;
 };
 
-export type ConnectorCredentialRecord = {
-  provider: ConnectorRecord["provider"];
-  accessTokenCiphertext: string;
-  refreshTokenCiphertext?: string;
-  tokenType: string;
-  scope?: string;
-  accessTokenExpiresAt?: string;
-  refreshTokenExpiresAt?: string;
-  updatedAt: string;
-};
-
 export type LibraryRepository = {
   list(query?: LibraryQuery): Promise<LibraryResponse>;
   findById(id: string): Promise<LibraryItem | undefined>;
+  listAgentCategories(): Promise<AgentContentCategorySummary[]>;
+  listAgentClassificationCandidates(limit: number): Promise<LibraryItem[]>;
   upsertQueued(item: LibraryItem, input: CreateItemInput): Promise<LibraryItem>;
   patch(id: string, input: UpdateItemInput): Promise<LibraryItem | undefined>;
+  setAgentClassification(id: string, result: AgentClassificationResult): Promise<LibraryItem | undefined>;
   delete(id: string): Promise<boolean>;
   replaceRecognitionResult(
     id: string,
@@ -53,9 +45,4 @@ export type LibraryRepository = {
   failRecognitionJob(id: string, error: unknown, runAfter: string): Promise<void>;
   recordCaptureEvent(event: CaptureEvent): Promise<CaptureEvent>;
   listCaptureEvents(limit?: number): Promise<CaptureEvent[]>;
-  listConnectors(): Promise<ConnectorView[]>;
-  upsertConnector(record: ConnectorRecord): Promise<ConnectorRecord>;
-  getConnectorCredential(provider: ConnectorRecord["provider"]): Promise<ConnectorCredentialRecord | undefined>;
-  upsertConnectorCredential(record: ConnectorCredentialRecord): Promise<ConnectorCredentialRecord>;
-  deleteConnectorCredential(provider: ConnectorRecord["provider"]): Promise<boolean>;
 };
