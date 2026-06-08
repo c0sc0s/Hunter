@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { execFile as execFileCb } from "node:child_process";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { createServer as createHttpServer } from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { chromium, type BrowserContext, type Page, type Worker } from "playwright";
 import { createServer, type ViteDevServer } from "vite";
 import type { CaptureEventsResponse, LibraryResponse, PublicLibraryItem } from "../shared/types";
+
+const execFile = promisify(execFileCb);
 
 type ExtensionSaveResponse = {
   ok: boolean;
@@ -212,17 +216,15 @@ try {
   const popupPage = await context.newPage();
   await popupPage.goto(`chrome-extension://${extensionId}/popup.html?tabId=${popupTabId}`);
   await popupPage.getByText(popupFixtureTitle).waitFor();
-  await popupPage.locator("#tags").fill("popup-e2e");
   await popupPage.locator("#note").fill("saved through visible popup golden");
   await popupPage.getByRole("button", { name: "Save" }).click();
-  await popupPage.getByText("Saved. Click Reload in Hunter.").waitFor();
+  await popupPage.getByRole("button", { name: "Saved" }).waitFor();
 
   const popupSavedItem = await waitForApiItem((item) => item.title === popupFixtureTitle && item.enrichmentState === "ready");
-  assert.ok(popupSavedItem.tags.includes("popup-e2e"));
   assert.ok(popupSavedItem.tags.includes("article"));
-  assert.ok(popupSavedItem.tags.length > 1);
   assert.equal(popupSavedItem.note, "saved through visible popup golden");
   assert.match(popupSavedItem.readableText ?? "", /visible extension save button reuses/);
+  assert.equal(await popupPage.locator("#coverPhoto").getAttribute("src"), popupSavedItem.coverImage);
   assert.equal("captureInput" in popupSavedItem, false);
 
   await appPage.getByRole("button", { name: "Reload", exact: true }).click();
@@ -243,8 +245,9 @@ try {
 }
 
 async function prepareExtension(apiOrigin: string, fixtureOrigin: string): Promise<string> {
+  await execFile(process.execPath, ["scripts/build-extension.mjs"], { cwd: process.cwd() });
   tempRoot = await mkdtemp(path.join(tmpdir(), "hunter-extension-golden-"));
-  const extensionSource = path.resolve("extension");
+  const extensionSource = path.resolve("extension/dist");
   const extensionPath = path.join(tempRoot, "extension");
   await cp(extensionSource, extensionPath, { recursive: true });
 

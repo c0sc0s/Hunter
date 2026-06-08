@@ -5,11 +5,15 @@ data/
 .env
 .env.*
 .harness-artifacts/
+.tsbuild/
+*.tsbuildinfo
 playwright-report/
 test-results/
 artifacts/
 electron/.bundle-tmp/
+electron/dist/
 electron/resources/server.cjs
 electron/resources/server.cjs.map
 electron/resources/runtime/
+extension/dist/
 release/

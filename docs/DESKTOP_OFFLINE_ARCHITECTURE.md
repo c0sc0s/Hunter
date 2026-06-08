@@ -6,13 +6,13 @@
 
 | 模块                                                                           | 状态 | 测试/验证                                   | 备注                                                                                      |
 | ------------------------------------------------------------------------------ | ---- | ------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| 扩展 queue.js（IndexedDB + storage 索引 + 容量保护 + lease）                   | 完成 | `pnpm test:queue`                           | `extension/src/queue.js`, `extension/tests/queue.test.ts`                                 |
-| 扩展 saveActions.js（performSave / flushQueue / tryPost / pingHealth）         | 完成 | `pnpm test:save-actions`                    | `extension/src/saveActions.js`                                                            |
-| 扩展 apiBase.js（4317-4319 探活 + TTL 缓存）                                   | 完成 | `pnpm test:api-base`                        | 自定义 off-list localhost base 会优先于默认端口                                           |
-| 扩展 background.js（alarms / onStartup / tabs.onUpdated / 上下文菜单 / badge） | 完成 | `pnpm golden:extension`                     | 所有保存入口都带 snapshot；supported-resource gate 当前关闭，待算法重做                   |
+| 扩展 queue.ts（IndexedDB + storage 索引 + 容量保护 + lease）                   | 完成 | `pnpm test:queue`                           | `extension/src/queue.ts`, `extension/tests/queue.test.ts`                                 |
+| 扩展 saveActions.ts（performSave / flushQueue / tryPost / pingHealth）         | 完成 | `pnpm test:save-actions`                    | `extension/src/saveActions.ts`                                                            |
+| 扩展 apiBase.ts（4317-4319 探活 + TTL 缓存）                                   | 完成 | `pnpm test:api-base`                        | 自定义 off-list localhost base 会优先于默认端口                                           |
+| 扩展 background.ts（alarms / onStartup / tabs.onUpdated / 上下文菜单 / badge） | 完成 | `pnpm golden:extension`                     | 所有保存入口都带 snapshot；supported-resource gate 当前关闭，待算法重做                   |
 | Server 端口范围回退 + stdout 握手                                              | 完成 | `pnpm test:listen`                          | `HUNTER_API_PORT=<port>` 是桌面壳解析的机器可读握手                                       |
 | Server 数据目录抽象（`HUNTER_DATA_DIR`）                                       | 完成 | `pnpm test:data-dir`                        | Electron dev 使用 repo `./data/`，packaged app 使用 OS userData 目录                      |
-| Electron shell（main/preload + sidecar supervisor + IPC API base）             | 完成 | `pnpm check`, manual smoke                  | `electron/main.cjs`, `electron/preload.cjs`, `electron/dev.mjs`                           |
+| Electron shell（main/preload + sidecar supervisor + IPC API base）             | 完成 | `pnpm check`, manual smoke                  | 源码在 `electron/src/*.ts`，运行产物在 `electron/dist/*.cjs`                              |
 | Electron 登录自启开关                                                          | 完成 | `pnpm check`                                | 前端 `useAutostart` 通过 preload bridge 调用 Electron LoginItem API；dev shell 隐藏该设置 |
 | Electron 打包配置                                                              | 完成 | `pnpm electron:dir` / `pnpm electron:build` | `electron-builder`，资源来自 `electron/resources`                                         |
 | 产品级签名/公证/自动更新                                                       | 未做 | -                                           | 仍属于 release 工程，不影响本地 dev                                                       |
@@ -20,7 +20,7 @@
 
 ## TL;DR
 
-- `pnpm dev` 启动 Electron dev orchestrator：先启动 Vite，再打开 Electron 窗口；Electron main 同时启动 Node API sidecar。
+- `pnpm dev` 启动 Electron dev orchestrator：先构建 Electron runtime，再启动 Vite，最后打开 Electron 窗口；Electron main 同时启动 Node API sidecar。
 - API sidecar 在 `4317 -> 4318 -> 4319` 中选择第一个可用端口，启动后向 stdout 写 `HUNTER_API_PORT=<port>`。
 - Electron preload 暴露最小 bridge：`getApiBase`、`onApiReady`、`isAutostartAvailable`、`getAutostart`、`setAutostart`。React 不直接访问 Node 或 Electron internals。
 - 浏览器扩展不读桌面壳内部状态，只探活 `127.0.0.1:4317-4319`，因此 Electron 与扩展之间没有文件路径耦合。
@@ -66,9 +66,10 @@ flowchart LR
 
 ### 2.1 运行入口
 
-- `pnpm dev` -> `tsx electron/dev.mjs`
-- `electron/dev.mjs` 启动 `pnpm dev:web`，等待 `http://127.0.0.1:5173` 可访问，然后启动 Electron。
-- `electron/main.cjs` 先启动 API sidecar，等到端口握手或 10 秒超时后创建 native window，并根据环境加载：
+- `pnpm dev` -> `tsx electron/src/dev.ts`
+- `electron/src/dev.ts` 先运行 `pnpm build:electron`，再启动 `pnpm dev:web`，等待 `http://127.0.0.1:5173` 可访问，然后启动 Electron。
+- dev orchestrator 监听 `electron/src/`、`server/`、`shared/`，变更后重新构建 Electron runtime 并重启 Electron。Vite 仍负责 renderer HMR。
+- `electron/src/main.ts` 构建到 `electron/dist/main.cjs`。main 先启动 API sidecar，等到端口握手或 10 秒超时后创建 native window，并根据环境加载：
   - dev: `http://127.0.0.1:5173`
   - packaged: `dist/index.html`
 
@@ -115,7 +116,7 @@ Unix/macOS 下 sidecar 以 detached process group 启动；Electron 正常退出
 
 ## 3. Preload Bridge
 
-`electron/preload.cjs` 暴露：
+源码 `electron/src/preload.ts` 构建为 `electron/dist/preload.cjs`，暴露：
 
 ```ts
 window.hunterDesktop = {
@@ -127,7 +128,7 @@ window.hunterDesktop = {
 }
 ```
 
-React 侧只通过 `src/lib/desktopBridge.ts` 访问这个对象：
+Bridge 类型定义在 `shared/desktopBridge.ts`，preload 和 React 侧共用同一份契约。React 只通过 `src/lib/desktopBridge.ts` 访问这个对象：
 
 - `src/lib/api.ts`：桌面环境使用 bridge 获取 absolute API base；浏览器环境保持相对 `/api`。
 - `src/hooks/useAutostart.ts`：packaged 桌面环境显示登录自启开关；dev、浏览器和 golden 环境隐藏。
@@ -157,9 +158,16 @@ React 侧只通过 `src/lib/desktopBridge.ts` 访问这个对象：
 - `electron/resources/server.cjs.map`
 - `electron/resources/runtime/node_modules`
 
+`pnpm build:electron` 输出：
+
+- `electron/dist/main.cjs`
+- `electron/dist/main.cjs.map`
+- `electron/dist/preload.cjs`
+- `electron/dist/preload.cjs.map`
+
 `pnpm electron:dir` 构建 unpacked app，适合本地 smoke。`pnpm electron:build` 交给 `electron-builder` 产出当前平台安装包。
 
-打包时 `electron-builder` 会把 `electron/resources/server.cjs` 放到 app `Resources/server.cjs`，并把 `electron/resources/runtime/node_modules` 放到 app `Resources/node_modules`。这让 `server.cjs` 的外部依赖解析走 Node 默认规则，不需要额外设置 `NODE_PATH`。
+打包时 `electron-builder` 会把 `dist/**` 和 `electron/dist/**` 放进 app asar，把 `electron/resources/server.cjs` 放到 app `Resources/server.cjs`，并把 `electron/resources/runtime/node_modules` 放到 app `Resources/node_modules`。这让 `server.cjs` 的外部依赖解析走 Node 默认规则，不需要额外设置 `NODE_PATH`。
 
 当前 release 工程仍未覆盖：
 
@@ -175,6 +183,7 @@ React 侧只通过 `src/lib/desktopBridge.ts` 访问这个对象：
 - `pnpm check`
 - `pnpm lint`
 - `pnpm format:check`
+- `pnpm build:electron`
 - `pnpm test:listen`
 - `pnpm test:data-dir`
 - `pnpm test:api-base`

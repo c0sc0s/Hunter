@@ -23,22 +23,32 @@ const DEFAULT_LOCAL_BASE = LOCAL_CANDIDATES[0];
 export const PROBE_TIMEOUT_MS = 1500;
 export const PROBE_CACHE_TTL_MS = 5 * 60 * 1000;
 
-/** @type {{ key: string; url: string; expiresAt: number } | null} */
-let cache = null;
+type ApiBaseStorage = {
+  get(defaults: Record<string, unknown>): Promise<Record<string, unknown>>;
+};
 
-/**
- * For tests: lets you swap fetch, clock, storage, and candidate list. Pass
- * `undefined` for any field you want to leave at the production default.
- *
- * @typedef {object} ApiBaseBackends
- * @property {typeof fetch} [fetch]
- * @property {() => number} [now]
- * @property {{ get: (defaults: Record<string, unknown>) => Promise<Record<string, unknown>> }} [storage]
- * @property {readonly string[]} [candidates]
- *
- * @param {ApiBaseBackends} [overrides]
- */
-export function configureApiBase(overrides = {}) {
+type ApiBaseBackends = {
+  fetch?: typeof fetch;
+  now?: () => number;
+  storage?: ApiBaseStorage;
+  candidates?: readonly string[];
+};
+
+type HealthProbe = {
+  url: string;
+  owner?: string;
+  startedAtMs?: number;
+};
+
+type ResolveApiBaseOptions = {
+  preferConfigured?: boolean;
+};
+
+let cache: { key: string; url: string; expiresAt: number } | null = null;
+
+// For tests: lets you swap fetch, clock, storage, and candidate list. Pass
+// `undefined` for any field you want to leave at the production default.
+export function configureApiBase(overrides: ApiBaseBackends = {}) {
   if (overrides.fetch) backends.fetch = overrides.fetch;
   if (overrides.now) backends.now = overrides.now;
   if (overrides.storage) backends.storage = overrides.storage;
@@ -50,30 +60,25 @@ export function resetApiBaseCache() {
   cache = null;
 }
 
-const backends = {
+const backends: {
+  fetch?: typeof fetch;
+  now: () => number;
+  storage?: ApiBaseStorage;
+  candidates: readonly string[];
+} = {
   fetch: typeof fetch === "function" ? fetch.bind(globalThis) : undefined,
   now: () => Date.now(),
-  /** @type {{ get: (defaults: Record<string, unknown>) => Promise<Record<string, unknown>> } | undefined} */
-  storage: typeof chrome !== "undefined" ? chrome?.storage?.local : undefined,
+  storage: typeof chrome !== "undefined" ? (chrome?.storage?.local as ApiBaseStorage | undefined) : undefined,
   candidates: LOCAL_CANDIDATES
 };
-
-/**
- * @typedef {object} HealthProbe
- * @property {string} url
- * @property {string} [owner]
- * @property {number} [startedAtMs]
- */
 
 /**
  * Probe a single base URL for `/api/health`. Returns a structured signal only
  * for real Hunter APIs, not arbitrary services that happen to answer 200.
  * Never throws.
  *
- * @param {string} base
- * @returns {Promise<HealthProbe | undefined>}
  */
-async function probe(base) {
+async function probe(base: string): Promise<HealthProbe | undefined> {
   if (!backends.fetch) return undefined;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
@@ -83,7 +88,7 @@ async function probe(base) {
       signal: controller.signal
     });
     if (!response.ok) return undefined;
-    const body = await response.json().catch(() => undefined);
+    const body = (await response.json().catch(() => undefined)) as { service?: unknown; owner?: unknown; startedAt?: unknown } | undefined;
     if (!body || body.service !== "hunter-api") return undefined;
     const startedAtMs = typeof body.startedAt === "string" ? Date.parse(body.startedAt) : Number.NaN;
     return {
@@ -102,10 +107,8 @@ async function probe(base) {
  * Returns true if `value` looks like one of our localhost API origins.
  * Treats default 127.0.0.1:4317 / localhost:4317 as "the user did not pick a
  * custom server", so probing is allowed.
- *
- * @param {string} value
  */
-function isLocalhostBase(value) {
+function isLocalhostBase(value: string) {
   try {
     const url = new URL(value);
     if (url.protocol !== "http:") return false;
@@ -125,17 +128,9 @@ function isLocalhostBase(value) {
  *   4. If every probe fails, return the user-configured base anyway so save
  *      attempts fail loudly (and are queued) at the HTTP layer instead of
  *      silently returning undefined here.
- *
- * @typedef {object} ResolveApiBaseOptions
- * @property {boolean} [preferConfigured] true when the user explicitly chose this local base.
  */
 
-/**
- * @param {string} configuredBase  the user's saved apiBase (or the default)
- * @param {ResolveApiBaseOptions} [options]
- * @returns {Promise<string>}
- */
-export async function resolveApiBase(configuredBase, options = {}) {
+export async function resolveApiBase(configuredBase: string, options: ResolveApiBaseOptions = {}): Promise<string> {
   const trimmed = configuredBase?.trim() || DEFAULT_LOCAL_BASE;
   const preferConfigured = Boolean(options.preferConfigured);
 
@@ -158,7 +153,7 @@ export async function resolveApiBase(configuredBase, options = {}) {
     return trimmed;
   }
 
-  const hits = [];
+  const hits: HealthProbe[] = [];
   for (const candidate of listLocalCandidates(trimmed)) {
     const hit = await probe(candidate);
     if (hit) hits.push(hit);
@@ -176,19 +171,14 @@ export async function resolveApiBase(configuredBase, options = {}) {
 /**
  * Returns the candidate list with the configured local base first, without
  * duplicating it in the default 4317–4319 set.
- *
- * @param {string} configuredBase
  */
-export function listLocalCandidates(configuredBase) {
+export function listLocalCandidates(configuredBase: string): string[] {
   const trimmed = configuredBase?.trim();
   if (!trimmed || !isLocalhostBase(trimmed)) return [...backends.candidates];
   return [trimmed, ...backends.candidates.filter((candidate) => candidate !== trimmed)];
 }
 
-/**
- * @param {HealthProbe[]} hits
- */
-function pickBestLocalCandidate(hits) {
+function pickBestLocalCandidate(hits: HealthProbe[]): HealthProbe | undefined {
   return hits
     .map((hit, order) => ({
       hit,
@@ -199,10 +189,7 @@ function pickBestLocalCandidate(hits) {
     .sort((a, b) => b.ownerScore - a.ownerScore || b.startedAtMs - a.startedAtMs || a.order - b.order)[0]?.hit;
 }
 
-/**
- * @param {string | undefined} owner
- */
-function ownerPriority(owner) {
+function ownerPriority(owner: string | undefined): number {
   return (
     {
       "electron-packaged": 300,

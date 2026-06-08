@@ -4,6 +4,212 @@
   "statusValues": ["ready", "in_progress", "blocked", "done", "cancelled"],
   "features": [
     {
+      "id": "multi-runtime-typescript-engineering",
+      "title": "Organize Hunter as a multi-runtime TypeScript application",
+      "status": "done",
+      "scope": [
+        "Split TypeScript checking into explicit runtime projects for shared contracts, server, renderer, Electron, extension, and scripts using project references.",
+        "Move the Electron main process, preload bridge, and dev orchestrator from raw CJS/MJS files into TypeScript source under `electron/src`.",
+        "Add an esbuild Electron build pipeline that writes generated runtime entry files to `electron/dist` and make Electron/electron-builder consume that generated output.",
+        "Share the desktop preload bridge contract through `shared/desktopBridge.ts` so preload and renderer compile against the same API shape.",
+        "Update package scripts so `pnpm check`, `pnpm build`, `pnpm dev`, `pnpm electron:dir`, and `pnpm electron:build` coordinate renderer, Electron, extension, server sidecar, and shared code consistently.",
+        "Add extension watch support using the same extension build pipeline that produces `extension/dist`.",
+        "Keep generated TypeScript metadata and runtime dist directories out of git, lint, and formatting checks.",
+        "Update README and architecture docs to describe the multi-runtime source layout, generated artifacts, development workflow, and packaging flow."
+      ],
+      "outOfScope": [
+        "Changing capture semantics, source adapter behavior, content recognition, extraction states, repository data, extension permissions, or UI product behavior.",
+        "Moving the repository into a full monorepo `apps/` and `packages/` layout; this slice keeps existing top-level ownership boundaries to avoid import churn.",
+        "Code signing, notarization, auto-update, Chrome Web Store packaging, or release CI automation."
+      ],
+      "dependencies": ["extension-typescript-build-pipeline", "electron-desktop-shell-migration"],
+      "definitionOfDone": [
+        "`pnpm check` type-checks shared, server, renderer, Electron, extension, and scripts through TypeScript project references.",
+        "`pnpm build` produces renderer assets, Electron runtime entry files, and the installable extension dist.",
+        "`pnpm electron:dir` builds an unsigned unpacked Electron app using `electron/dist/main.cjs` and `electron/dist/preload.cjs`.",
+        "`pnpm golden:extension` still loads the generated extension dist and completes the installed-extension save journey.",
+        "Docs explain source directories, generated directories, development workflows, and packaging responsibilities."
+      ],
+      "verification": [
+        {
+          "command": "pnpm harness:init",
+          "proves": "Harness metadata remains readable after adding the engineering slice."
+        },
+        {
+          "command": "pnpm build:electron",
+          "proves": "Electron TypeScript main/preload sources bundle into generated CJS runtime entries."
+        },
+        {
+          "command": "pnpm check",
+          "proves": "TypeScript project references validate shared, server, renderer, scripts, extension, and Electron together."
+        },
+        {
+          "command": "pnpm lint && pnpm format:check",
+          "proves": "The new configs, Electron TypeScript source, and build scripts satisfy repository lint and formatting gates."
+        },
+        {
+          "command": "pnpm test:listen && pnpm test:data-dir && pnpm test:api-base",
+          "proves": "The Electron-adjacent sidecar port/data-dir and extension API-base contracts remain unchanged."
+        },
+        {
+          "command": "pnpm build",
+          "proves": "The coordinated build produces renderer, Electron, and extension generated artifacts."
+        },
+        {
+          "command": "pnpm electron:dir",
+          "proves": "electron-builder packages the app using generated Electron runtime entries and bundled server resources."
+        },
+        {
+          "command": "pnpm dev",
+          "proves": "The TypeScript dev orchestrator builds Electron, starts Vite, starts Electron, and receives the sidecar API-ready handshake."
+        },
+        {
+          "command": "pnpm golden:extension",
+          "proves": "The extension build pipeline still works against the installed-extension golden journey."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-08",
+          "commands": [
+            "pnpm build:electron",
+            "pnpm check",
+            "pnpm lint",
+            "pnpm format:check",
+            "pnpm test:listen && pnpm test:data-dir && pnpm test:api-base",
+            "pnpm build",
+            "pnpm electron:dir",
+            "pnpm dev (smoke; stopped after Vite ready and HUNTER_API_PORT=4317)",
+            "pnpm golden:extension",
+            "pnpm harness:init"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "tsconfig.base.json",
+            "tsconfig.json",
+            "tsconfig.renderer.json",
+            "shared/tsconfig.json",
+            "server/tsconfig.json",
+            "scripts/tsconfig.json",
+            "electron/tsconfig.json",
+            "electron/src/main.ts",
+            "electron/src/preload.ts",
+            "electron/src/dev.ts",
+            "scripts/build-electron.mjs",
+            "scripts/build-extension.mjs",
+            "shared/desktopBridge.ts",
+            "src/lib/desktopBridge.ts",
+            "server/index.ts",
+            "package.json",
+            ".gitignore",
+            ".prettierignore",
+            "eslint.config.js",
+            "README.md",
+            "extension/README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/DESKTOP_OFFLINE_ARCHITECTURE.md",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "No source recognition, capture, repository, or UI behavior was intentionally changed. The package smoke is an unsigned local `electron-builder --dir` build; release signing/notarization remains out of scope.",
+          "notes": "Electron source now lives under `electron/src` and is built into ignored `electron/dist`. Root typechecking uses project references and writes declaration-only metadata into ignored `.tsbuild`. The extension build script also supports `--watch` for rebuild-on-change development while Chrome still requires extension reload."
+        }
+      ],
+      "next": "Future engineering slices can convert remaining MJS build utilities to TypeScript if desired, add automated packaged-app smoke, add extension zip/release automation, and implement signing/notarization/auto-update."
+    },
+    {
+      "id": "extension-typescript-build-pipeline",
+      "title": "Move the Chrome extension runtime to TypeScript with a build pipeline",
+      "status": "done",
+      "scope": [
+        "Convert the extension runtime modules under `extension/src` from JavaScript to TypeScript while preserving the MV3 background, popup, support detector, extractor, queue, save action, cover preview, and API-base behaviors.",
+        "Add an extension-specific TypeScript project with Chrome API types and include it in the repository `pnpm check` gate.",
+        "Add an esbuild-based extension build that writes an installable MV3 root to `extension/dist`, including manifest, popup HTML, styles, icons, bundled background worker, bundled popup module, and injected extractor script.",
+        "Update the installed-extension golden to build and load `extension/dist` so test coverage matches the real local install path.",
+        "Update local install documentation to load `extension/dist` and keep generated extension output out of git, lint, and formatting checks."
+      ],
+      "outOfScope": [
+        "Changing capture semantics, server source recognition, extraction state rules, support-gate product policy, UI copy, or extension permissions.",
+        "Bundling the extension into the Electron installer or adding Chrome Web Store packaging/release automation."
+      ],
+      "dependencies": [],
+      "definitionOfDone": [
+        "`pnpm check` type-checks both the app/server project and the extension TypeScript project.",
+        "`pnpm extension:build` generates a load-unpacked MV3 extension under `extension/dist`.",
+        "Extension unit tests still pass against the TypeScript source modules.",
+        "`pnpm golden:extension` loads the built extension and verifies background capture plus visible popup Save.",
+        "Docs identify `extension/src` as TypeScript source and `extension/dist` as the local install target."
+      ],
+      "verification": [
+        {
+          "command": "pnpm extension:check",
+          "proves": "The extension TypeScript project compiles against DOM, Chrome, and Node test types."
+        },
+        {
+          "command": "pnpm extension:build",
+          "proves": "The MV3 service worker, popup module, and injected extractor bundle into `extension/dist`."
+        },
+        {
+          "command": "pnpm test:extension && pnpm test:content-support && pnpm test:cover-preview && pnpm test:queue && pnpm test:save-actions && pnpm test:api-base",
+          "proves": "The TypeScript migration preserves extension extraction, support detection, cover preview, queue, save, and API-base behavior."
+        },
+        {
+          "command": "pnpm check && pnpm lint && pnpm format:check && pnpm build",
+          "proves": "The new extension project is wired into the repository quality and production build gates."
+        },
+        {
+          "command": "pnpm golden:extension",
+          "proves": "Chromium can load the generated extension dist and complete the installed-extension save journey."
+        }
+      ],
+      "evidence": [
+        {
+          "date": "2026-06-08",
+          "commands": [
+            "pnpm extension:check",
+            "pnpm extension:build",
+            "pnpm check",
+            "pnpm test:extension && pnpm test:content-support && pnpm test:cover-preview && pnpm test:queue && pnpm test:save-actions && pnpm test:api-base",
+            "pnpm lint",
+            "pnpm format:check",
+            "pnpm build",
+            "pnpm golden:extension"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "extension/src/apiBase.ts",
+            "extension/src/background.ts",
+            "extension/src/contentSupport.ts",
+            "extension/src/coverPreview.ts",
+            "extension/src/extractor.ts",
+            "extension/src/popup.ts",
+            "extension/src/queue.ts",
+            "extension/src/saveActions.ts",
+            "extension/tsconfig.json",
+            "scripts/build-extension.mjs",
+            "scripts/golden-extension.ts",
+            "package.json",
+            "pnpm-lock.yaml",
+            "eslint.config.js",
+            ".gitignore",
+            ".prettierignore",
+            "README.md",
+            "extension/README.md",
+            "docs/TECHNICAL_DESIGN.md",
+            "docs/DESKTOP_OFFLINE_ARCHITECTURE.md",
+            "shared/coverImageUrl.ts",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "Extension unit tests use JSDOM, fake-indexeddb, mocked fetch/storage/clock backends, and esbuild-transformed extractor source. `pnpm golden:extension` uses headed Chromium with isolated local API, web, and fixture servers, and loads the generated `extension/dist` directory.",
+          "notes": "The runtime source modules now live as TypeScript. The build output remains ignored generated state. Capture remains browser-snapshot-only; no URL-only capture, server fetch, or recognition policy changed."
+        }
+      ],
+      "next": "Future release work can package/sign the built extension or add Chrome Web Store automation separately from this source/build migration."
+    },
+    {
       "id": "agent-incremental-category-filters",
       "title": "Classify saved items incrementally into reusable AI topic filters",
       "status": "done",
@@ -405,9 +611,10 @@
       "scope": [
         "Apply the main web client's neutral shadcn-style dark theme tokens to the static extension popup.",
         "Replace the older warm accent treatment with the main app's neutral primary button, card borders, focus rings, scrollbars, and typography fallbacks.",
-        "Restyle the page preview, source badge, snapshot badge, save metadata form, API details control, status row, and hidden unsupported-resource card using the same card/badge/input/button visual language as the main app.",
-        "Keep the visible popup save contract intact: `#tags`, `#note`, `#apiBase`, `#saveButton`, and the success text `Saved. Click Reload in Hunter.` remain available for the installed extension journey.",
-        "Keep the popup compact enough for a Chrome extension window, with local visual preview confirming a 376px popup width, about 584px content height, and no horizontal overflow."
+        "Restyle the page preview, save metadata form, button-owned save states, and hidden unsupported-resource card using the same card/input/button visual language as the main app.",
+        "Keep the visible popup save contract focused on `#note` and `#saveButton`; remove user Tags/category entry, the visible API endpoint control, title-above badges, and the visible status row.",
+        "After online Save returns the public item, replace the preview image with the returned `coverImage` so the popup shows the same selected cover the web client renders.",
+        "Keep the popup compact enough for a Chrome extension window, with local visual preview confirming a 376px popup width, reduced content height, and no horizontal overflow."
       ],
       "outOfScope": [
         "Changing capture, recognition, background save, offline queue, API, or repository behavior."
@@ -422,7 +629,7 @@
       ],
       "verification": [
         {
-          "command": "pnpm exec prettier --check extension/popup.html extension/styles.css extension/src/popup.js",
+          "command": "pnpm exec prettier --check extension/popup.html extension/styles.css extension/src/popup.ts",
           "proves": "The edited popup files keep repository formatting."
         },
         {
@@ -462,9 +669,39 @@
             "pnpm build"
           ],
           "result": "passed",
-          "artifacts": ["extension/popup.html", "extension/styles.css", "extension/src/popup.js", "feature-list.json", "progress.md", "session-handoff.md"],
+          "artifacts": ["extension/popup.html", "extension/styles.css", "extension/src/popup.ts", "feature-list.json", "progress.md", "session-handoff.md"],
           "mockBoundary": "The visual preview used a local static HTTP rendering of the popup HTML/CSS with sample tab data and data-URL image assets. It did not exercise Chrome extension APIs; behavior coverage comes from the extension unit tests and API smoke test.",
-          "notes": "The popup now uses the main client's neutral dark tokens, compact card/input/button treatments, source and snapshot badges, a chevron details control, a status dot row, and a real icon+text Save button whose accessible name remains `Save`. Browser preview measured body width 376px, popup height about 584px, and no horizontal overflow. `pnpm golden:extension` was attempted three times and failed before the visible popup path at that point; the later extension gate/API-base fix resolved the installed-extension golden, which now passes."
+          "notes": "The popup now uses the main client's neutral dark tokens, compact card/input/button treatments, and a real icon+text Save button whose accessible name remains `Save`. Browser preview measured body width 376px, popup height about 584px, and no horizontal overflow. `pnpm golden:extension` was attempted three times and failed before the visible popup path at that point; the later extension gate/API-base fix resolved the installed-extension golden, which now passes."
+        },
+        {
+          "date": "2026-06-08",
+          "commands": [
+            "pnpm exec prettier --check extension/popup.html extension/styles.css extension/src/popup.ts scripts/golden-extension.ts feature-list.json progress.md session-handoff.md",
+            "pnpm extension:check",
+            "pnpm exec eslint extension/src/popup.ts scripts/golden-extension.ts --max-warnings=0",
+            "pnpm test:cover-preview",
+            "pnpm test:save-actions",
+            "pnpm extension:build",
+            "pnpm golden:extension",
+            "pnpm check",
+            "pnpm lint",
+            "pnpm exec prettier --check extension/src/coverPreview.ts extension/src/popup.ts extension/tests/coverPreview.test.ts",
+            "pnpm exec eslint extension/src/coverPreview.ts extension/src/popup.ts extension/tests/coverPreview.test.ts --max-warnings=0"
+          ],
+          "result": "passed",
+          "artifacts": [
+            "extension/popup.html",
+            "extension/styles.css",
+            "extension/src/coverPreview.ts",
+            "extension/src/popup.ts",
+            "extension/tests/coverPreview.test.ts",
+            "scripts/golden-extension.ts",
+            "feature-list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "mockBoundary": "The static layout check served `extension/popup.html` from a temporary localhost HTTP server and validated DOM/CSS shape only; the source `src/popup.js` script is generated at build time, so runtime behavior coverage comes from `pnpm golden:extension` loading the built `extension/dist` MV3 extension.",
+          "notes": "The popup now removes user Tags/category entry, visible API endpoint control, title-above badges, and visible status text. The Save button owns Loading/Saving/Saved/Saved offline/Retry Save state. The visible popup golden now asserts that the saved public item's returned `coverImage` is mirrored into `#coverPhoto`, matching the web client's selected cover. X popup preview now ignores the default `abs.twimg.com/.../og/image.png` placeholder, scans body fallback media, and retries briefly so delayed client-rendered `pbs.twimg.com/media` images can replace the Hunter mark."
         }
       ],
       "next": "No popup-theme-specific follow-up; continue extension work through the supported-resource gate and source-recognition slices."
@@ -1642,10 +1879,10 @@
       "status": "done",
       "scope": [
         "Remove duplicate popup-side snapshot extraction and POST behavior.",
-        "Keep the popup responsible for UI, tags, note, API base, and status text.",
+        "Keep the popup responsible for UI, note entry, and button-owned save state; API base resolution stays in the background pipeline.",
         "Route visible popup Save clicks through the shared background save-tab message path.",
         "Extend the installed extension golden journey to click the popup Save button.",
-        "Verify popup-saved items preserve tags, note, browser-snapshot provenance, reader content, and public response stripping."
+        "Verify popup-saved items preserve note, browser-snapshot provenance, reader content, selected cover image, and public response stripping."
       ],
       "outOfScope": ["Chrome toolbar UI automation", "Chrome Web Store packaging", "Live external websites", "Connector OAuth", "Visual regression"],
       "dependencies": ["installed-extension-golden"],
@@ -1676,7 +1913,7 @@
           "result": "passed",
           "artifacts": ["extension/src/popup.js", "scripts/golden-extension.ts", "feature-list.json"],
           "mockBoundary": "The journey opens the extension popup page with a target tab id and clicks Save; it does not automate the Chrome toolbar bubble itself or visit live external websites.",
-          "notes": "Popup initialization now reads page title and URL without injecting the extractor. The Save button stores API base, sends tags and note to the background save-tab message path, and reports Saved only after the API returns a queued item. The golden verifies the visible popup click saves a second article, preserves tags and note, reaches ready recognition, renders reader content after Web manual Reload, and keeps captureInput out of public responses."
+          "notes": "Popup initialization now reads page title and URL without injecting the extractor. The Save button sends note to the background save-tab message path and reports Saved only after the API returns a queued item or public item. The golden verifies the visible popup click saves a second article, preserves note, reaches ready recognition, mirrors the returned coverImage in the popup preview, renders reader content after Web manual Reload, and keeps captureInput out of public responses."
         }
       ],
       "next": "Completed by the toolbar action popup smoke slice for API-level toolbar launch coverage."

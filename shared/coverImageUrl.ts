@@ -6,9 +6,7 @@
 // Keep this module dependency-free and side-effect-free so it can be imported
 // from both Node and browser bundles.
 //
-// A hand-synced copy lives in `extension/src/coverPreview.js` because popup.js
-// runs as a browser ES module with no bundler step and cannot import .ts at
-// runtime. Drift is caught by the parity test in
+// A hand-synced copy lives in `extension/src/coverPreview.ts`. Drift is caught by the parity test in
 // `extension/tests/coverPreview.test.ts`; when this file changes, update the
 // extension copy and extend that fixture list.
 

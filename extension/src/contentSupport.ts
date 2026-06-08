@@ -9,7 +9,26 @@
 
 export const CONTENT_SUPPORT_GATE_ENABLED = false;
 
-export function detectSupportedResourceInPage() {
+export type ContentSupportSignal = {
+  source: string;
+  value: string;
+};
+
+export type ContentSupportKind = "article" | "video" | "audio" | "discussion" | "product" | "image" | "post" | "unsupported";
+
+export type ContentSupportResult = {
+  supported: boolean;
+  kind: ContentSupportKind;
+  confidence: number;
+  reason?: string;
+  signals: ContentSupportSignal[];
+};
+
+type SupportForm = "article" | "video" | "audio" | "discussion" | "product" | "image";
+type SupportScores = Record<SupportForm, number>;
+type JsonLdNode = Record<string, unknown>;
+
+export function detectSupportedResourceInPage(): ContentSupportResult {
   const url = String(location.href || "");
   const parsedUrl = safeUrl(url);
   if (!parsedUrl || !/^https?:$/.test(parsedUrl.protocol)) {
@@ -25,7 +44,7 @@ export function detectSupportedResourceInPage() {
 
   // Keep helpers nested: chrome.scripting.executeScript serializes only this
   // function body when injecting the detector into the captured tab.
-  function detectSourceRouteSupport(parsed) {
+  function detectSourceRouteSupport(parsed: URL): ContentSupportResult | undefined {
     const host = parsed.hostname.replace(/^www\./, "");
     const path = parsed.pathname.toLowerCase();
     if (host !== "x.com" && host !== "twitter.com") return undefined;
@@ -57,8 +76,8 @@ export function detectSupportedResourceInPage() {
     };
   }
 
-  function detectGenericContentSupport(parsed) {
-    const signals = [];
+  function detectGenericContentSupport(parsed: URL): ContentSupportResult {
+    const signals: ContentSupportSignal[] = [];
     const scores = emptyScores();
 
     recordUrlHints(parsed, signals, scores);
@@ -73,7 +92,7 @@ export function detectSupportedResourceInPage() {
     return decideGenericSupport(scores, signals);
   }
 
-  function emptyScores() {
+  function emptyScores(): SupportScores {
     return {
       article: 0,
       video: 0,
@@ -84,12 +103,12 @@ export function detectSupportedResourceInPage() {
     };
   }
 
-  function decideGenericSupport(scores, signals) {
-    const ranked = Object.entries(scores).sort(([, a], [, b]) => b - a);
-    const [form, score] = ranked[0] || ["unknown", 0];
-    const [unsupportedForm, unsupportedScore] = Object.entries(scores)
+  function decideGenericSupport(scores: SupportScores, signals: ContentSupportSignal[]): ContentSupportResult {
+    const ranked = (Object.entries(scores) as Array<[SupportForm, number]>).sort(([, a], [, b]) => b - a);
+    const [form, score] = ranked[0] ?? ["article", 0];
+    const [unsupportedForm, unsupportedScore] = (Object.entries(scores) as Array<[SupportForm, number]>)
       .filter(([candidate]) => candidate !== "article" && candidate !== "video")
-      .sort(([, a], [, b]) => b - a)[0] || ["unknown", 0];
+      .sort(([, a], [, b]) => b - a)[0] ?? ["product", 0];
 
     if (unsupportedScore >= 0.6 && score - unsupportedScore < 0.2) {
       return {
@@ -112,14 +131,14 @@ export function detectSupportedResourceInPage() {
 
     return {
       supported: false,
-      kind: score >= 0.5 && form !== "unknown" ? form : "unsupported",
+      kind: score >= 0.5 ? form : "unsupported",
       confidence: score >= 0.5 ? Math.min(1, score) : 0,
       reason: "unsupported_resource_type",
       signals
     };
   }
 
-  function recordUrlHints(parsed, collectedSignals, collectedScores) {
+  function recordUrlHints(parsed: URL, collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     const host = parsed.hostname.replace(/^www\./, "");
     const path = parsed.pathname.toLowerCase();
     if (isYouTubeVideoUrl(host, parsed) || isVimeoVideoUrl(host, path)) {
@@ -135,7 +154,7 @@ export function detectSupportedResourceInPage() {
     }
   }
 
-  function isYouTubeVideoUrl(host, parsed) {
+  function isYouTubeVideoUrl(host: string, parsed: URL): boolean {
     const path = parsed.pathname.toLowerCase();
     if (host === "youtu.be") return path.length > 1;
     if (host !== "youtube.com" && !host.endsWith(".youtube.com")) return false;
@@ -147,13 +166,13 @@ export function detectSupportedResourceInPage() {
     );
   }
 
-  function isVimeoVideoUrl(host, path) {
+  function isVimeoVideoUrl(host: string, path: string): boolean {
     if (host === "player.vimeo.com") return /^\/video\/\d+(?:\/|$)/.test(path);
     if (host !== "vimeo.com" && !host.endsWith(".vimeo.com")) return false;
     return /^\/(?:\d+|video\/\d+)(?:\/|$)/.test(path);
   }
 
-  function recordOgType(collectedSignals, collectedScores) {
+  function recordOgType(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     const value = metaContent('meta[property="og:type"]');
     if (!value) return;
     collectedSignals.push({ source: "og_type", value });
@@ -175,14 +194,14 @@ export function detectSupportedResourceInPage() {
     }
   }
 
-  function recordTwitterCard(collectedSignals, collectedScores) {
+  function recordTwitterCard(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     const value = metaContent('meta[name="twitter:card"]');
     if (!value) return;
     collectedSignals.push({ source: "twitter_card", value });
     if (value === "player") addScore(collectedScores, "video", 0.4);
   }
 
-  function recordJsonLdTypes(collectedSignals, collectedScores) {
+  function recordJsonLdTypes(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     for (const node of readJsonLdNodes()) {
       for (const type of collectJsonLdTypes(node)) {
         collectedSignals.push({ source: "json_ld", value: type });
@@ -193,13 +212,13 @@ export function detectSupportedResourceInPage() {
     }
   }
 
-  function recordOembedLink(collectedSignals) {
+  function recordOembedLink(collectedSignals: ContentSupportSignal[]) {
     const link = document.querySelector('link[type="application/json+oembed"]') || document.querySelector('link[type="text/xml+oembed"]');
     const href = link?.getAttribute("href")?.trim();
     if (href) collectedSignals.push({ source: "oembed_link", value: href });
   }
 
-  function recordVideoElements(collectedSignals, collectedScores) {
+  function recordVideoElements(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     const count = document.querySelectorAll("video").length;
     if (count === 0) return;
     collectedSignals.push({ source: "video_element", value: String(count) });
@@ -207,16 +226,16 @@ export function detectSupportedResourceInPage() {
     addScore(collectedScores, "video", 0.2);
   }
 
-  function recordSelectedText(collectedSignals, collectedScores) {
-    const selectedText = typeof window === "undefined" ? "" : cleanText(window.getSelection?.().toString?.());
+  function recordSelectedText(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
+    const selectedText = typeof window === "undefined" ? "" : cleanText(window.getSelection?.()?.toString?.() ?? "");
     if (selectedText.length < 160) return;
     collectedSignals.push({ source: "selected_text", value: String(selectedText.length) });
     addScore(collectedScores, "article", 0.6);
   }
 
-  function recordArticleStructure(collectedSignals, collectedScores) {
+  function recordArticleStructure(collectedSignals: ContentSupportSignal[], collectedScores: SupportScores) {
     const root = bestArticleRoot();
-    const articleTextLength = cleanText(root?.innerText || root?.textContent).length;
+    const articleTextLength = cleanText((root as HTMLElement | undefined)?.innerText || root?.textContent).length;
     const articleParagraphs = root?.querySelectorAll?.("p, li, blockquote, pre").length || 0;
     if (articleTextLength >= 320 && articleParagraphs >= 2) {
       addScore(collectedScores, "article", 0.65);
@@ -225,7 +244,7 @@ export function detectSupportedResourceInPage() {
     }
 
     const mainRoot = document.querySelector("main, [role='main'], #main");
-    const mainTextLength = cleanText(mainRoot?.innerText || mainRoot?.textContent).length;
+    const mainTextLength = cleanText((mainRoot as HTMLElement | null)?.innerText || mainRoot?.textContent).length;
     const mainParagraphs = mainRoot?.querySelectorAll?.("p, li, blockquote, pre").length || 0;
     const hasHeading = Boolean(mainRoot?.querySelector?.("h1, h2"));
     if (mainTextLength >= 600 && mainParagraphs >= 3 && hasHeading) {
@@ -234,12 +253,12 @@ export function detectSupportedResourceInPage() {
     }
   }
 
-  function bestArticleRoot() {
+  function bestArticleRoot(): Element | undefined {
     const candidates = Array.from(document.querySelectorAll(contentRootSelector()));
     return candidates.map((element) => ({ element, score: scoreContentRoot(element) })).sort((a, b) => b.score - a.score)[0]?.element;
   }
 
-  function contentRootSelector() {
+  function contentRootSelector(): string {
     return [
       "article",
       "main",
@@ -259,8 +278,8 @@ export function detectSupportedResourceInPage() {
     ].join(",");
   }
 
-  function scoreContentRoot(element) {
-    const textLength = cleanText(element?.innerText || element?.textContent).length;
+  function scoreContentRoot(element: Element): number {
+    const textLength = cleanText((element as HTMLElement).innerText || element?.textContent).length;
     const paragraphCount = element.querySelectorAll?.("p, li, blockquote, pre").length || 0;
     const imageCount = element.querySelectorAll?.("img").length || 0;
     const tagName = element.tagName?.toLowerCase();
@@ -273,8 +292,8 @@ export function detectSupportedResourceInPage() {
     return textLength + paragraphCount * 80 + imageCount * 40 - structuralPenalty;
   }
 
-  function readJsonLdNodes() {
-    const nodes = [];
+  function readJsonLdNodes(): JsonLdNode[] {
+    const nodes: JsonLdNode[] = [];
     for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
       const text = script.textContent;
       if (!text) continue;
@@ -287,21 +306,22 @@ export function detectSupportedResourceInPage() {
     return nodes;
   }
 
-  function flattenJsonLdNodes(value) {
+  function flattenJsonLdNodes(value: unknown): JsonLdNode[] {
     if (!value) return [];
     if (Array.isArray(value)) return value.flatMap(flattenJsonLdNodes);
     if (typeof value !== "object") return [];
-    return [value, ...flattenJsonLdNodes(value["@graph"])];
+    const node = value as JsonLdNode;
+    return [node, ...flattenJsonLdNodes(node["@graph"])];
   }
 
-  function collectJsonLdTypes(node) {
+  function collectJsonLdTypes(node: JsonLdNode): string[] {
     const type = node?.["@type"];
     if (typeof type === "string") return [type];
     if (Array.isArray(type)) return type.filter((value) => typeof value === "string");
     return [];
   }
 
-  function matchJsonLdFormType(type) {
+  function matchJsonLdFormType(type: string): SupportForm | undefined {
     if (/^(videoobject|movie|tvepisode|episode|musicvideoobject)$/i.test(type)) return "video";
     if (/^(audioobject|podcastepisode|musicrecording|musicalbum|radioseries)$/i.test(type)) return "audio";
     if (/^(article|newsarticle|blogposting|techarticle|report|opinionnewsarticle)$/i.test(type)) return "article";
@@ -311,7 +331,7 @@ export function detectSupportedResourceInPage() {
     return undefined;
   }
 
-  function jsonLdScore(form) {
+  function jsonLdScore(form: SupportForm): number {
     return {
       video: 0.8,
       audio: 0.7,
@@ -322,16 +342,16 @@ export function detectSupportedResourceInPage() {
     }[form];
   }
 
-  function metaContent(selector) {
+  function metaContent(selector: string): string | undefined {
     const raw = document.querySelector(selector)?.getAttribute("content")?.trim().toLowerCase();
     return raw && raw.length > 0 ? raw : undefined;
   }
 
-  function addScore(collectedScores, form, delta) {
+  function addScore(collectedScores: SupportScores, form: SupportForm, delta: number): void {
     collectedScores[form] = (collectedScores[form] || 0) + delta;
   }
 
-  function safeUrl(value) {
+  function safeUrl(value: string): URL | undefined {
     try {
       return new URL(value);
     } catch {
@@ -339,14 +359,14 @@ export function detectSupportedResourceInPage() {
     }
   }
 
-  function cleanText(value) {
+  function cleanText(value: unknown): string {
     return String(value || "")
       .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "")
       .replace(/\s+/g, " ")
       .trim();
   }
 
-  function unsupported(reason, collectedSignals) {
+  function unsupported(reason: string, collectedSignals: ContentSupportSignal[]): ContentSupportResult {
     return {
       supported: false,
       kind: "unsupported",

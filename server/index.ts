@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import cors from "cors";
 import express from "express";
+import type { Express } from "express";
 import { z } from "zod";
 import type {
   AgentIncrementalClassificationResponse,
@@ -25,7 +26,7 @@ import { bindAndAnnounce } from "./listen";
 import { libraryRepository } from "./repository";
 import { drainRecognitionJobs, enqueueRecognition } from "./recognitionJobs";
 
-export const app = express();
+export const app: Express = express();
 
 const apiStartedAt = new Date().toISOString();
 const apiOwner = process.env.HUNTER_API_OWNER?.trim() || "standalone";

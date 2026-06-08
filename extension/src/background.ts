@@ -5,9 +5,9 @@
  */
 
 import { resolveApiBase } from "./apiBase.js";
-import { CONTENT_SUPPORT_GATE_ENABLED, detectSupportedResourceInPage } from "./contentSupport.js";
-import { queue } from "./queue.js";
-import { flushQueue, performSave } from "./saveActions.js";
+import { CONTENT_SUPPORT_GATE_ENABLED, detectSupportedResourceInPage, type ContentSupportResult } from "./contentSupport.js";
+import { queue, type QueueSnapshot } from "./queue.js";
+import { flushQueue, performSave, type SaveResult } from "./saveActions.js";
 
 const DEFAULT_API_BASE = "http://127.0.0.1:4317";
 const FLUSH_ALARM = "hunter-flush";
@@ -21,6 +21,21 @@ const UNSUPPORTED_RESOURCE_MESSAGE = "Current resource is not a supported articl
 // web UI in any tab, we know the desktop app is alive — try flushing now
 // instead of waiting for the next alarm tick.
 const WEB_ORIGIN_HINTS = ["127.0.0.1:5173", "127.0.0.1:4317", "localhost:5173", "localhost:4317"];
+
+type SaveActiveTabMessage = {
+  type: "hunter-save-active-tab";
+  tabId?: unknown;
+  tags?: unknown;
+  note?: unknown;
+};
+
+type ExtractedSnapshot = QueueSnapshot & {
+  url: string;
+};
+
+type ExtractorWindow = Window & {
+  __hunterExtractPageSnapshot?: () => ExtractedSnapshot;
+};
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -43,7 +58,8 @@ chrome.tabs?.onUpdated?.addListener((_tabId, changeInfo) => {
   // Only react when the tab finishes loading and the URL hints at a live
   // Hunter web UI. Avoid waking the worker for every keystroke in the URL bar.
   if (changeInfo.status !== "complete" || !changeInfo.url) return;
-  if (WEB_ORIGIN_HINTS.some((hint) => changeInfo.url.includes(hint))) {
+  const updatedUrl = changeInfo.url;
+  if (WEB_ORIGIN_HINTS.some((hint) => updatedUrl.includes(hint))) {
     void runFlush();
   }
 });
@@ -55,8 +71,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "hunter-save-active-tab") return undefined;
 
-  void saveActiveTab(message)
-    .then((result) => sendResponse({ ok: true, ...result }))
+  void saveActiveTab(message as SaveActiveTabMessage)
+    .then((result) => sendResponse(result))
     .catch((error) =>
       sendResponse({
         ok: false,
@@ -67,7 +83,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-async function getApiBase() {
+async function getApiBase(): Promise<string> {
   const { apiBase, apiBaseMode } = await chrome.storage.local.get(["apiBase", "apiBaseMode"]);
   const configured = typeof apiBase === "string" && apiBase.trim() ? apiBase.trim() : DEFAULT_API_BASE;
   const manuallyConfigured = apiBaseMode === "manual" || configured !== DEFAULT_API_BASE;
@@ -77,7 +93,7 @@ async function getApiBase() {
   return resolveApiBase(configured, { preferConfigured: manuallyConfigured });
 }
 
-async function handleContextSave(info, tab) {
+async function handleContextSave(info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) {
   if (!tab?.id) return;
 
   setTransientBadge("...", BADGE_INFO);
@@ -105,8 +121,10 @@ async function handleContextSave(info, tab) {
   }
 }
 
-async function saveActiveTab(message) {
-  const [tab] = Number.isInteger(message.tabId) ? [{ id: message.tabId }] : await chrome.tabs.query({ active: true, currentWindow: true });
+async function saveActiveTab(message: SaveActiveTabMessage): Promise<SaveResult> {
+  const [tab] = Number.isInteger(message.tabId)
+    ? [{ id: message.tabId as number }]
+    : await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("No active tab to save");
 
   await assertSupportedTab(tab.id);
@@ -114,7 +132,7 @@ async function saveActiveTab(message) {
   const apiBase = await getApiBase();
   const result = await performSave(apiBase, {
     url: snapshot.url,
-    tags: Array.isArray(message.tags) ? message.tags.filter((tag) => typeof tag === "string") : [],
+    tags: Array.isArray(message.tags) ? message.tags.filter((tag): tag is string => typeof tag === "string") : [],
     note: typeof message.note === "string" && message.note.trim() ? message.note.trim() : undefined,
     snapshot
   });
@@ -122,7 +140,7 @@ async function saveActiveTab(message) {
   return result;
 }
 
-async function assertSupportedTab(tabId) {
+async function assertSupportedTab(tabId: number): Promise<void> {
   if (!CONTENT_SUPPORT_GATE_ENABLED) return;
 
   const support = await detectTabResourceSupport(tabId);
@@ -131,14 +149,14 @@ async function assertSupportedTab(tabId) {
   throw new Error(UNSUPPORTED_RESOURCE_MESSAGE);
 }
 
-async function detectTabResourceSupport(tabId) {
+async function detectTabResourceSupport(tabId: number): Promise<ContentSupportResult> {
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: detectSupportedResourceInPage
     });
     const support = result?.result;
-    if (support && typeof support === "object" && "supported" in support) return support;
+    if (support && typeof support === "object" && "supported" in support) return support as ContentSupportResult;
   } catch (error) {
     console.warn("[hunter] content support detection failed", error);
   }
@@ -152,21 +170,21 @@ async function detectTabResourceSupport(tabId) {
   };
 }
 
-async function afterSave(result) {
+async function afterSave(result: SaveResult): Promise<void> {
   if (result.ok && result.queued) {
     await ensureFlushAlarm();
   }
   await refreshBadge();
 }
 
-async function extractSnapshot(tabId) {
+async function extractSnapshot(tabId: number): Promise<ExtractedSnapshot> {
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["src/extractor.js"]
   });
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => window.__hunterExtractPageSnapshot()
+    func: () => (window as unknown as ExtractorWindow).__hunterExtractPageSnapshot?.()
   });
   const snapshot = result?.result;
   // Fail fast at the orchestration boundary so callers get a real diagnostic
@@ -177,7 +195,7 @@ async function extractSnapshot(tabId) {
   return snapshot;
 }
 
-async function runFlush() {
+async function runFlush(): Promise<void> {
   const apiBase = await getApiBase();
   await flushQueue(apiBase);
   await refreshBadge();
@@ -190,7 +208,7 @@ async function runFlush() {
   }
 }
 
-async function ensureFlushAlarm() {
+async function ensureFlushAlarm(): Promise<void> {
   const existing = await chrome.alarms.get(FLUSH_ALARM);
   if (existing) return;
   await chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: FLUSH_PERIOD_MINUTES });
@@ -202,7 +220,7 @@ async function ensureFlushAlarm() {
  *   - ↑N (green) → N queued items waiting on the server
  *   - empty       → all caught up
  */
-async function refreshBadge() {
+async function refreshBadge(): Promise<void> {
   try {
     const { queued, failed } = await queue.counters();
     if (failed > 0) {
@@ -219,22 +237,22 @@ async function refreshBadge() {
   }
 }
 
-function setTransientBadge(text, color) {
+function setTransientBadge(text: string, color: string) {
   setBadge(text, color);
 }
 
-function setBadge(text, color) {
+function setBadge(text: string, color?: string) {
   chrome.action.setBadgeText({ text });
   if (text && color) chrome.action.setBadgeBackgroundColor({ color });
 }
 
-async function showUnsupportedResourceBubble() {
+async function showUnsupportedResourceBubble(): Promise<void> {
   setTransientBadge("!", BADGE_ERROR);
   await showNotification("Unsupported resource type", UNSUPPORTED_RESOURCE_MESSAGE);
   setTimeout(() => void refreshBadge(), 1800);
 }
 
-async function showNotification(title, message) {
+async function showNotification(title: string, message: string): Promise<void> {
   try {
     if (!chrome.notifications?.create) return;
     await chrome.notifications.create({

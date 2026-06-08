@@ -13,37 +13,58 @@
  * so unit tests can drive the pipeline without real fetch.
  */
 
-import { queue } from "./queue.js";
+import { queue, type QueueIndexEntry, type QueuePayload } from "./queue.js";
 
-/**
- * @typedef {object} SaveActionsBackends
- * @property {typeof fetch} [fetch]
- * @property {() => number} [now]
- */
+type SaveActionsBackends = {
+  fetch?: typeof fetch;
+  now?: () => number;
+};
 
-/**
- * @typedef {object} PostOk
- * @property {"ok"} kind
- * @property {unknown} item
- */
+type PostOk = {
+  kind: "ok";
+  item: unknown;
+};
 
-/**
- * @typedef {object} PostClientError
- * @property {"client-error"} kind
- * @property {string} error
- * @property {number} status
- */
+type PostClientError = {
+  kind: "client-error";
+  error: string;
+  status: number;
+};
 
-/**
- * @typedef {object} PostTransient
- * @property {"transient"} kind
- * @property {string} error
- * @property {number} [status]
- */
+type PostTransient = {
+  kind: "transient";
+  error: string;
+  status?: number;
+};
 
-/**
- * @typedef {PostOk | PostClientError | PostTransient} PostResult
- */
+type PostResult = PostOk | PostClientError | PostTransient;
+
+export type SaveOk = {
+  ok: true;
+  queued: false;
+  item: unknown;
+};
+
+export type SaveQueued = {
+  ok: true;
+  queued: true;
+  entry: QueueIndexEntry;
+};
+
+export type SaveFailed = {
+  ok: false;
+  queued: false;
+  error: string;
+  status?: number;
+};
+
+export type SaveResult = SaveOk | SaveQueued | SaveFailed;
+
+export type FlushResult = {
+  flushed: number;
+  halted?: boolean;
+  skipped?: "lease-busy" | "server-down";
+};
 
 export const POST_TIMEOUT_MS = 4_000;
 export const FLUSH_POST_TIMEOUT_MS = 8_000;
@@ -52,34 +73,24 @@ const RETRY_BASE_MS = 60_000;
 const RETRY_MAX_MS = 30 * 60_000;
 
 const backends = {
-  /** @type {typeof fetch} */
-  fetch: (...args) => globalThis.fetch(...args),
-  /** @type {() => number} */
+  fetch: globalThis.fetch.bind(globalThis),
   now: () => Date.now()
 };
 
-/**
- * @param {SaveActionsBackends} overrides
- */
-export function configureSaveActions(overrides) {
+export function configureSaveActions(overrides: SaveActionsBackends) {
   if (overrides.fetch) backends.fetch = overrides.fetch;
   if (overrides.now) backends.now = overrides.now;
 }
 
 /**
- * @param {string} apiBase
- * @returns {string}
  */
-function normalizeBase(apiBase) {
+function normalizeBase(apiBase: string): string {
   return apiBase.replace(/\/+$/, "");
 }
 
 /**
- * @param {string} url
- * @param {RequestInit} init
- * @param {number} timeoutMs
  */
-async function fetchWithTimeout(url, init, timeoutMs) {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -92,10 +103,8 @@ async function fetchWithTimeout(url, init, timeoutMs) {
 /**
  * Quick liveness check. Treats any non-2xx or thrown error as `down`.
  *
- * @param {string} apiBase
- * @returns {Promise<boolean>}
  */
-export async function pingHealth(apiBase) {
+export async function pingHealth(apiBase: string): Promise<boolean> {
   try {
     const response = await fetchWithTimeout(`${normalizeBase(apiBase)}/api/health`, { method: "GET" }, HEALTH_TIMEOUT_MS);
     return response.ok;
@@ -113,13 +122,9 @@ export async function pingHealth(apiBase) {
  *   - 4xx (except 408 / 429)    → client-error (dead-letter candidate)
  *   - 408, 429, 5xx, no response → transient
  *
- * @param {string} apiBase
- * @param {import("./queue.js").QueuePayload} payload
- * @param {number} [timeoutMs]
- * @returns {Promise<PostResult>}
  */
-export async function tryPost(apiBase, payload, timeoutMs = POST_TIMEOUT_MS) {
-  let response;
+export async function tryPost(apiBase: string, payload: QueuePayload, timeoutMs = POST_TIMEOUT_MS): Promise<PostResult> {
+  let response: Response;
   try {
     response = await fetchWithTimeout(
       `${normalizeBase(apiBase)}/api/items`,
@@ -148,40 +153,11 @@ export async function tryPost(apiBase, payload, timeoutMs = POST_TIMEOUT_MS) {
 }
 
 /**
- * @typedef {object} SaveOk
- * @property {true} ok
- * @property {false} queued
- * @property {unknown} item
- */
-
-/**
- * @typedef {object} SaveQueued
- * @property {true} ok
- * @property {true} queued
- * @property {import("./queue.js").QueueIndexEntry} entry
- */
-
-/**
- * @typedef {object} SaveFailed
- * @property {false} ok
- * @property {false} queued
- * @property {string} error
- * @property {number} [status]
- */
-
-/**
- * @typedef {SaveOk | SaveQueued | SaveFailed} SaveResult
- */
-
-/**
  * User-facing single save attempt. Returns `queued: true` when the server is
  * not reachable so the popup can show "saved offline".
  *
- * @param {string} apiBase
- * @param {import("./queue.js").QueuePayload} payload
- * @returns {Promise<SaveResult>}
  */
-export async function performSave(apiBase, payload) {
+export async function performSave(apiBase: string, payload: QueuePayload): Promise<SaveResult> {
   const result = await tryPost(apiBase, payload);
   if (result.kind === "ok") {
     return { ok: true, queued: false, item: result.item };
@@ -194,20 +170,11 @@ export async function performSave(apiBase, payload) {
 }
 
 /**
- * @param {number} attempts
- * @param {number} now
  */
-function nextAttemptAt(attempts, now) {
+function nextAttemptAt(attempts: number, now: number): number {
   const delay = Math.min(RETRY_BASE_MS * 2 ** attempts, RETRY_MAX_MS);
   return now + delay;
 }
-
-/**
- * @typedef {object} FlushResult
- * @property {number} flushed
- * @property {boolean} [halted]
- * @property {"lease-busy" | "server-down"} [skipped]
- */
 
 /**
  * Drain the queue while holding the lease. Pings `/api/health` first to avoid
@@ -221,13 +188,11 @@ function nextAttemptAt(attempts, now) {
  * `halted` is true when a transient failure mid-loop caused us to stop and let
  * the next alarm retry from where we left off.
  *
- * @param {string} apiBase
- * @returns {Promise<FlushResult>}
  */
-export async function flushQueue(apiBase) {
+export async function flushQueue(apiBase: string): Promise<FlushResult> {
   const outcome = await queue.withLease("flush", async ({ renew }) => {
     if (!(await pingHealth(apiBase))) {
-      return /** @type {FlushResult} */ ({ flushed: 0, skipped: "server-down" });
+      return { flushed: 0, skipped: "server-down" } satisfies FlushResult;
     }
 
     const all = await queue.list({ state: "queued" });
@@ -258,10 +223,10 @@ export async function flushQueue(apiBase) {
       // transient: don't burn through the rest of the queue; let the next
       // alarm tick retry on the new state.
       await queue.bumpAttempt(entry.id, post.error, nextAttemptAt(entry.attempts, backends.now()));
-      return /** @type {FlushResult} */ ({ flushed, halted: true });
+      return { flushed, halted: true } satisfies FlushResult;
     }
 
-    return /** @type {FlushResult} */ ({ flushed });
+    return { flushed } satisfies FlushResult;
   });
 
   if (outcome === null) return { flushed: 0, skipped: "lease-busy" };

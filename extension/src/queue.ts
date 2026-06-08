@@ -15,78 +15,90 @@
  * configureQueue() so tests can run on fake-indexeddb and a JS Map shim.
  */
 
-/**
- * @typedef {object} QueueSnapshot
- * @property {string} url
- * @property {string} [title]
- * @property {string} [canonicalUrl]
- * @property {string} [html]
- * @property {string} [textContent]
- * @property {string} [selectedText]
- * @property {string} [excerpt]
- * @property {string} [siteName]
- * @property {string} [favicon]
- * @property {Array<string | {
- *   url: string,
- *   score?: number,
- *   source?: string,
- *   width?: number,
- *   height?: number,
- *   alt?: string,
- *   context?: string,
- *   inContentRoot?: boolean,
- *   order?: number
- * }>} [imageCandidates]
- * @property {string} [publishedAt]
- */
+export type QueueImageCandidate =
+  | string
+  | {
+      url: string;
+      score?: number;
+      source?: string;
+      width?: number;
+      height?: number;
+      alt?: string;
+      context?: string;
+      inContentRoot?: boolean;
+      order?: number;
+    };
 
-/**
- * @typedef {object} QueuePayload
- * @property {string} url
- * @property {string} [note]
- * @property {string[]} [tags]
- * @property {QueueSnapshot} snapshot
- */
+export type QueueContentCandidate = {
+  kind: string;
+  text?: string;
+  html?: string;
+  selector?: string;
+  score?: number;
+};
 
-/**
- * @typedef {"queued" | "syncing" | "failed"} QueueState
- */
+export type QueueSnapshot = {
+  url: string;
+  title?: string;
+  canonicalUrl?: string;
+  html?: string;
+  textContent?: string;
+  selectedText?: string;
+  excerpt?: string;
+  siteName?: string;
+  favicon?: string;
+  imageCandidates?: QueueImageCandidate[];
+  contentCandidates?: QueueContentCandidate[];
+  publishedAt?: string;
+};
 
-/**
- * @typedef {object} QueueIndexEntry
- * @property {string} id
- * @property {string} canonicalUrl
- * @property {string} host
- * @property {string} title
- * @property {number} queuedAt
- * @property {number} attempts
- * @property {QueueState} state
- * @property {string} [lastError]
- * @property {boolean} [degraded]
- * @property {number} nextAttemptAt
- */
+export type QueuePayload = {
+  url: string;
+  note?: string;
+  tags?: string[];
+  snapshot: QueueSnapshot;
+};
 
-/**
- * @typedef {object} EnqueueResult
- * @property {QueueIndexEntry} entry
- * @property {boolean} replaced
- * @property {boolean} degraded
- */
+export type QueueState = "queued" | "syncing" | "failed";
 
-/**
- * @typedef {object} StorageShim Minimal subset of chrome.storage.local we depend on.
- * @property {(keys: string | string[] | object | null) => Promise<Record<string, unknown>>} get
- * @property {(items: Record<string, unknown>) => Promise<void>} set
- * @property {(keys: string | string[]) => Promise<void>} [remove]
- */
+export type QueueIndexEntry = {
+  id: string;
+  canonicalUrl: string;
+  host: string;
+  title: string;
+  queuedAt: number;
+  attempts: number;
+  state: QueueState;
+  lastError?: string;
+  degraded?: boolean;
+  nextAttemptAt: number;
+};
 
-/**
- * @typedef {object} QueueBackends
- * @property {IDBFactory} [indexedDB]
- * @property {StorageShim} [storage]
- * @property {{ randomUUID?: () => string }} [crypto]
- * @property {() => number} [now]
- */
+export type EnqueueResult = {
+  entry: QueueIndexEntry;
+  replaced: boolean;
+  degraded: boolean;
+};
+
+export type StorageShim = {
+  get(keys: string | string[] | Record<string, unknown> | null): Promise<Record<string, unknown>>;
+  set(items: Record<string, unknown>): Promise<void>;
+  remove?(keys: string | string[]): Promise<void>;
+};
+
+export type QueueBackends = {
+  indexedDB?: IDBFactory;
+  storage?: StorageShim;
+  crypto?: { randomUUID?: () => string };
+  now?: () => number;
+};
+
+type QueueRuntimeBackends = {
+  indexedDB?: IDBFactory;
+  storage?: StorageShim;
+  crypto?: { randomUUID?: () => string };
+  now: () => number;
+};
 
 export const DB_NAME = "hunter";
 export const DB_VERSION = 1;
@@ -134,12 +146,12 @@ const TRACKING_PARAMS = new Set([
   "yclid"
 ]);
 
-let backends = /** @type {Required<QueueBackends>} */ ({
+let backends: QueueRuntimeBackends = {
   get indexedDB() {
     return globalThis.indexedDB;
   },
   get storage() {
-    return /** @type {StorageShim} */ (globalThis.chrome?.storage?.local);
+    return globalThis.chrome?.storage?.local as StorageShim | undefined;
   },
   get crypto() {
     return globalThis.crypto;
@@ -147,18 +159,16 @@ let backends = /** @type {Required<QueueBackends>} */ ({
   now() {
     return Date.now();
   }
-});
+};
 
-/** @type {Promise<IDBDatabase> | null} */
-let dbPromise = null;
+let dbPromise: Promise<IDBDatabase> | null = null;
 
 /**
  * Replace one or more backends. Used by tests and could be used to point the
  * queue at a different storage area. Resets the cached IDB connection.
  *
- * @param {QueueBackends} overrides
  */
-export function configureQueue(overrides) {
+export function configureQueue(overrides: QueueBackends) {
   const next = { ...backends };
   if (overrides.indexedDB) next.indexedDB = overrides.indexedDB;
   if (overrides.storage) next.storage = overrides.storage;
@@ -168,10 +178,7 @@ export function configureQueue(overrides) {
   dbPromise = null;
 }
 
-/**
- * @returns {Promise<IDBDatabase>}
- */
-function openDb() {
+function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   const factory = backends.indexedDB;
   if (!factory) throw new Error("queue: indexedDB backend missing");
@@ -191,34 +198,22 @@ function openDb() {
   return dbPromise;
 }
 
-/**
- * @template T
- * @param {IDBRequest<T>} request
- * @returns {Promise<T>}
- */
-function reqAsPromise(request) {
+function reqAsPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-/**
- * @param {IDBTransaction} tx
- * @returns {Promise<void>}
- */
-function txDone(tx) {
-  return new Promise((resolve, reject) => {
+function txDone(tx: IDBTransaction): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error("queue: transaction aborted"));
   });
 }
 
-/**
- * @returns {StorageShim}
- */
-function storage() {
+function storage(): StorageShim {
   const s = backends.storage;
   if (!s) throw new Error("queue: storage backend missing");
   return s;
@@ -228,30 +223,21 @@ function storage() {
  * Read a single key from storage. Tolerates both `get(string)` (chrome native)
  * and the polyfill that always returns an object.
  *
- * @template T
- * @param {string} key
- * @returns {Promise<T | undefined>}
  */
-async function storageGet(key) {
+async function storageGet<T>(key: string): Promise<T | undefined> {
   const res = await storage().get([key]);
-  return /** @type {T | undefined} */ (res?.[key]);
+  return res?.[key] as T | undefined;
 }
 
-/**
- * @returns {Promise<{ entries: QueueIndexEntry[]; counters: { queued: number; failed: number } }>}
- */
-async function readIndex() {
+async function readIndex(): Promise<{ entries: QueueIndexEntry[]; counters: { queued: number; failed: number } }> {
   const res = await storage().get([STORAGE_KEYS.INDEX, STORAGE_KEYS.COUNTERS]);
   return {
-    entries: /** @type {QueueIndexEntry[]} */ (res?.[STORAGE_KEYS.INDEX] ?? []),
-    counters: /** @type {{ queued: number; failed: number }} */ (res?.[STORAGE_KEYS.COUNTERS] ?? { queued: 0, failed: 0 })
+    entries: (res?.[STORAGE_KEYS.INDEX] ?? []) as QueueIndexEntry[],
+    counters: (res?.[STORAGE_KEYS.COUNTERS] ?? { queued: 0, failed: 0 }) as { queued: number; failed: number }
   };
 }
 
-/**
- * @param {QueueIndexEntry[]} entries
- */
-async function writeIndex(entries) {
+async function writeIndex(entries: QueueIndexEntry[]): Promise<void> {
   const counters = recomputeCounters(entries);
   await storage().set({
     [STORAGE_KEYS.INDEX]: entries,
@@ -260,10 +246,7 @@ async function writeIndex(entries) {
   });
 }
 
-/**
- * @param {QueueIndexEntry[]} entries
- */
-function recomputeCounters(entries) {
+function recomputeCounters(entries: QueueIndexEntry[]): { queued: number; failed: number } {
   let queued = 0;
   let failed = 0;
   for (const entry of entries) {
@@ -278,10 +261,8 @@ function recomputeCounters(entries) {
  * strips well-known tracking params, sorts remaining params. Falls back to the
  * input string when URL parsing fails (e.g. extension-only file:// schemes).
  *
- * @param {string} value
- * @returns {string}
  */
-export function canonicalize(value) {
+export function canonicalize(value: string): string {
   try {
     const parsed = new URL(value);
     parsed.hash = "";
@@ -298,11 +279,7 @@ export function canonicalize(value) {
   }
 }
 
-/**
- * @param {string} url
- * @returns {string}
- */
-function safeHost(url) {
+function safeHost(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -310,7 +287,7 @@ function safeHost(url) {
   }
 }
 
-function makeId() {
+function makeId(): string {
   const c = backends.crypto;
   if (c?.randomUUID) return c.randomUUID();
   return `q-${backends.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -320,23 +297,17 @@ function makeId() {
  * Approximate the byte cost of a payload by JSON-encoding it. Used for capacity
  * accounting; rough but consistent across entries.
  *
- * @param {QueuePayload} payload
  */
-function approxPayloadBytes(payload) {
+function approxPayloadBytes(payload: QueuePayload): number {
   return JSON.stringify(payload).length;
 }
 
 /**
  * Strip a payload down to URL identity. Used when capacity protection has to
- * choose between dropping a save entirely or keeping the URL so the server can
- * later re-fetch public content. The snapshot body is the expensive part; URL
- * alone keeps Save honest (entry still syncs; recognition falls back to public
- * HTML fetch instead of using the captured snapshot).
- *
- * @param {QueuePayload} payload
- * @returns {QueuePayload}
+ * choose between dropping a save entirely or keeping a dead-letterable record.
+ * The server will still enforce snapshot-required capture semantics.
  */
-function degradePayload(payload) {
+function degradePayload(payload: QueuePayload): QueuePayload {
   return {
     url: payload.url,
     note: payload.note,
@@ -352,40 +323,43 @@ function degradePayload(payload) {
   };
 }
 
-/**
- * @typedef {object} StoredPayloadRecord
- * @property {string} id
- * @property {string} canonicalUrl
- * @property {QueuePayload} payload
- * @property {number} capturedAt
- * @property {number} attempts
- * @property {number} nextAttemptAt
- * @property {number} [bytes]
- * @property {boolean} [degraded]
- */
+type StoredPayloadRecord = {
+  id: string;
+  canonicalUrl: string;
+  payload: QueuePayload;
+  capturedAt: number;
+  attempts: number;
+  nextAttemptAt: number;
+  bytes?: number;
+  degraded?: boolean;
+};
+
+type PayloadMeta = {
+  id: string;
+  bytes: number;
+  capturedAt: number;
+  degraded: boolean;
+};
 
 /**
  * Stream all payload records via cursor, returning lightweight metadata.
  * Avoids materializing every payload body in memory at once.
  *
- * @param {IDBDatabase} db
- * @returns {Promise<Array<{ id: string; bytes: number; capturedAt: number; degraded: boolean }>>}
  */
-function listPayloadMeta(db) {
+function listPayloadMeta(db: IDBDatabase): Promise<PayloadMeta[]> {
   return new Promise((resolve, reject) => {
-    /** @type {Array<{ id: string; bytes: number; capturedAt: number; degraded: boolean }>} */
-    const out = [];
+    const out: PayloadMeta[] = [];
     const tx = db.transaction(STORE_PAYLOADS, "readonly");
     const store = tx.objectStore(STORE_PAYLOADS);
     const request = store.openCursor();
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const cursor = /** @type {IDBCursorWithValue | null} */ (request.result);
+      const cursor = request.result;
       if (!cursor) {
         resolve(out);
         return;
       }
-      const value = /** @type {StoredPayloadRecord} */ (cursor.value);
+      const value = cursor.value as StoredPayloadRecord;
       out.push({
         id: value.id,
         bytes: typeof value.bytes === "number" ? value.bytes : approxPayloadBytes(value.payload),
@@ -406,29 +380,24 @@ function listPayloadMeta(db) {
  *   2. Entry count over MAX_ENTRIES: drop oldest already-degraded entries
  *      first; only drop fresh entries as a last resort.
  *
- * "Degrade then drop" is preferred over "drop fresh" because the URL is
- * recoverable (server can re-fetch public content), the snapshot is not.
+ * "Degrade then drop" is preferred over "drop fresh" because the URL remains
+ * recoverable as an audit/dead-letter record, the snapshot is not.
  *
- * @param {IDBDatabase} db
- * @param {QueueIndexEntry[]} entries
- * @returns {Promise<{ degradedIds: string[]; removedIds: string[] }>}
  */
-async function enforceCapacity(db, entries) {
+async function enforceCapacity(db: IDBDatabase, entries: QueueIndexEntry[]): Promise<{ degradedIds: string[]; removedIds: string[] }> {
   const meta = await listPayloadMeta(db);
   const metaById = new Map(meta.map((m) => [m.id, m]));
 
-  /** @type {Set<string>} */
-  const degradedIds = new Set();
-  /** @type {Set<string>} */
-  const removedIds = new Set();
+  const degradedIds = new Set<string>();
+  const removedIds = new Set<string>();
 
   let total = meta.reduce((sum, m) => sum + m.bytes, 0);
   if (total > MAX_TOTAL_BYTES) {
     const candidates = [...entries].filter((e) => !e.degraded && metaById.has(e.id)).sort((a, b) => a.queuedAt - b.queuedAt);
     for (const candidate of candidates) {
       if (total <= MAX_TOTAL_BYTES) break;
-      const record = /** @type {StoredPayloadRecord | undefined} */ (
-        await reqAsPromise(db.transaction(STORE_PAYLOADS, "readonly").objectStore(STORE_PAYLOADS).get(candidate.id))
+      const record = await reqAsPromise<StoredPayloadRecord | undefined>(
+        db.transaction(STORE_PAYLOADS, "readonly").objectStore(STORE_PAYLOADS).get(candidate.id)
       );
       if (!record) continue;
       const degraded = degradePayload(record.payload);
@@ -480,10 +449,8 @@ async function enforceCapacity(db, entries) {
  *
  * Applies capacity protection after insert.
  *
- * @param {QueuePayload} payload
- * @returns {Promise<EnqueueResult>}
  */
-async function enqueue(payload) {
+async function enqueue(payload: QueuePayload): Promise<EnqueueResult> {
   if (!payload?.snapshot?.url) {
     throw new Error("queue.enqueue: payload.snapshot.url is required");
   }
@@ -499,7 +466,6 @@ async function enqueue(payload) {
   const id = existing?.id ?? makeId();
   const replaced = Boolean(existing);
 
-  /** @type {QueueIndexEntry} */
   const entry = {
     id,
     canonicalUrl,
@@ -507,7 +473,7 @@ async function enqueue(payload) {
     title,
     queuedAt: existing ? existing.queuedAt : now,
     attempts: 0,
-    state: "queued",
+    state: "queued" as const,
     nextAttemptAt: now,
     degraded: false
   };
@@ -543,24 +509,16 @@ async function enqueue(payload) {
   return { entry: finalEntry, replaced, degraded: degradedIds.includes(id) };
 }
 
-/**
- * @param {{ state?: QueueState }} [filter]
- * @returns {Promise<QueueIndexEntry[]>}
- */
-async function list(filter) {
+async function list(filter?: { state?: QueueState }): Promise<QueueIndexEntry[]> {
   const { entries } = await readIndex();
   if (!filter?.state) return entries;
   return entries.filter((entry) => entry.state === filter.state);
 }
 
-/**
- * @param {string} id
- * @returns {Promise<QueuePayload | null>}
- */
-async function loadPayload(id) {
+async function loadPayload(id: string): Promise<QueuePayload | null> {
   const db = await openDb();
   const tx = db.transaction(STORE_PAYLOADS, "readonly");
-  const record = /** @type {{ payload?: QueuePayload } | undefined} */ (await reqAsPromise(tx.objectStore(STORE_PAYLOADS).get(id)));
+  const record = await reqAsPromise<{ payload?: QueuePayload } | undefined>(tx.objectStore(STORE_PAYLOADS).get(id));
   await txDone(tx);
   return record?.payload ?? null;
 }
@@ -568,9 +526,8 @@ async function loadPayload(id) {
 /**
  * Delete both the payload and the index entry. Called after a successful POST.
  *
- * @param {string} id
  */
-async function markSynced(id) {
+async function markSynced(id: string): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORE_PAYLOADS, "readwrite");
   tx.objectStore(STORE_PAYLOADS).delete(id);
@@ -585,14 +542,10 @@ async function markSynced(id) {
  * Mark dead-letter. Payload is kept in IDB so the user can manually retry via
  * the Pending panel; index reflects state=failed and lastError.
  *
- * @param {string} id
- * @param {string} error
  */
-async function markFailed(id, error) {
+async function markFailed(id: string, error: string): Promise<void> {
   const { entries } = await readIndex();
-  const next = entries.map((entry) =>
-    entry.id === id ? { ...entry, state: /** @type {QueueState} */ ("failed"), lastError: error } : entry
-  );
+  const next = entries.map((entry) => (entry.id === id ? { ...entry, state: "failed" as const, lastError: error } : entry));
   await writeIndex(next);
 }
 
@@ -600,18 +553,14 @@ async function markFailed(id, error) {
  * Record a retryable failure: bump attempts and reschedule. Auto-promotes to
  * failed when the entry exceeds MAX_ATTEMPTS or MAX_AGE_MS.
  *
- * @param {string} id
- * @param {string} error
- * @param {number} nextAttemptAt
  */
-async function bumpAttempt(id, error, nextAttemptAt) {
+async function bumpAttempt(id: string, error: string, nextAttemptAt: number): Promise<void> {
   const now = backends.now();
   const { entries } = await readIndex();
   const next = entries.map((entry) => {
     if (entry.id !== id) return entry;
     const attempts = entry.attempts + 1;
-    /** @type {QueueState} */
-    let state = "queued";
+    let state: QueueState = "queued";
     if (attempts >= MAX_ATTEMPTS || now - entry.queuedAt > MAX_AGE_MS) {
       state = "failed";
     }
@@ -623,9 +572,8 @@ async function bumpAttempt(id, error, nextAttemptAt) {
 /**
  * Manual remove (e.g. user clicks Remove on a failed entry).
  *
- * @param {string} id
  */
-async function remove(id) {
+async function remove(id: string): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORE_PAYLOADS, "readwrite");
   tx.objectStore(STORE_PAYLOADS).delete(id);
@@ -640,16 +588,13 @@ async function remove(id) {
  * Drop failed entries older than MAX_AGE_MS. Returns counts for observability.
  * Capacity-based degrade (PR-A4) will return non-zero `degraded`.
  *
- * @returns {Promise<{ removed: number; degraded: number }>}
  */
-async function prune() {
+async function prune(): Promise<{ removed: number; degraded: number }> {
   const now = backends.now();
   const { entries } = await readIndex();
 
-  /** @type {string[]} */
-  const droppedIds = [];
-  /** @type {QueueIndexEntry[]} */
-  const surviving = [];
+  const droppedIds: string[] = [];
+  const surviving: QueueIndexEntry[] = [];
   for (const entry of entries) {
     if (entry.state === "failed" && now - entry.queuedAt > MAX_AGE_MS) {
       droppedIds.push(entry.id);
@@ -670,18 +615,14 @@ async function prune() {
   return { removed: droppedIds.length, degraded: 0 };
 }
 
-/**
- * @returns {Promise<{ queued: number; failed: number }>}
- */
-async function counters() {
+async function counters(): Promise<{ queued: number; failed: number }> {
   const { counters: c } = await readIndex();
   return c;
 }
 
-/**
- * @typedef {object} LeaseHandle
- * @property {() => Promise<void>} renew Extend the lease by another LEASE_TTL_MS.
- */
+type LeaseHandle = {
+  renew(): Promise<void>;
+};
 
 /**
  * Run `fn` while holding the queue lease. Returns null when the lease is busy
@@ -689,16 +630,11 @@ async function counters() {
  * to recover from killed service workers; `handle.renew()` should be called
  * after each long step to avoid TTL expiry while still mid-flush.
  *
- * @template T
- * @param {string} holder
- * @param {(handle: LeaseHandle) => Promise<T>} fn
- * @returns {Promise<T | null>}
  */
-async function withLease(holder, fn) {
-  const current = await storageGet(STORAGE_KEYS.LEASE);
+async function withLease<T>(holder: string, fn: (handle: LeaseHandle) => Promise<T>): Promise<T | null> {
+  const current = await storageGet<{ holder: string; expiresAt: number }>(STORAGE_KEYS.LEASE);
   const now = backends.now();
-  const active = /** @type {{ holder: string; expiresAt: number } | undefined} */ (current);
-  if (active && active.expiresAt > now && active.holder !== holder) {
+  if (current && current.expiresAt > now && current.holder !== holder) {
     return null;
   }
 
@@ -707,11 +643,9 @@ async function withLease(holder, fn) {
   // Re-read to detect concurrent acquisition. Storage writes are last-write-wins,
   // so the loser drops out. This is best-effort; a rare double-run is harmless
   // because POST is idempotent on canonicalUrl.
-  const verify = await storageGet(STORAGE_KEYS.LEASE);
-  const verifyActive = /** @type {{ holder: string; expiresAt: number } | undefined} */ (verify);
-  if (verifyActive?.holder !== holder) return null;
+  const verify = await storageGet<{ holder: string; expiresAt: number }>(STORAGE_KEYS.LEASE);
+  if (verify?.holder !== holder) return null;
 
-  /** @type {LeaseHandle} */
   const handle = {
     async renew() {
       await storage().set({
@@ -723,9 +657,8 @@ async function withLease(holder, fn) {
   try {
     return await fn(handle);
   } finally {
-    const final = await storageGet(STORAGE_KEYS.LEASE);
-    const finalActive = /** @type {{ holder: string; expiresAt: number } | undefined} */ (final);
-    if (finalActive?.holder === holder) {
+    const final = await storageGet<{ holder: string; expiresAt: number }>(STORAGE_KEYS.LEASE);
+    if (final?.holder === holder) {
       await storage().set({ [STORAGE_KEYS.LEASE]: { holder, expiresAt: 0 } });
     }
   }
@@ -744,9 +677,6 @@ export const queue = {
   withLease
 };
 
-/**
- * @returns {Promise<void>}
- */
-export async function __resetForTests() {
+export async function __resetForTests(): Promise<void> {
   dbPromise = null;
 }

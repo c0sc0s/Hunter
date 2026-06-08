@@ -1,19 +1,21 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, extname, relative, resolve } from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 
-import chokidar from "chokidar";
+import chokidar, { type FSWatcher } from "chokidar";
 import electronPath from "electron";
 
-const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const viteUrl = process.env.HUNTER_ELECTRON_DEV_URL ?? "http://127.0.0.1:5173";
 const electronRestartDebounceMs = 300;
 const electronRestartTimeoutMs = 5_000;
 const restartableExtensions = new Set([".cjs", ".cts", ".js", ".json", ".mjs", ".mts", ".ts", ".tsx"]);
-const restartWatchPaths = ["electron/main.cjs", "electron/preload.cjs", "server", "shared"];
+const restartWatchPaths = ["electron/src", "server", "shared"];
+const electronBinary = electronPath as unknown as string;
 
+await buildElectron();
 await assertDevPortFree(viteUrl);
 
 const vite = spawnManaged("pnpm", ["dev:web"], {
@@ -21,13 +23,13 @@ const vite = spawnManaged("pnpm", ["dev:web"], {
   env: process.env
 });
 
-let electron;
-let restartWatcher;
-let restartTimer;
+let electron: ChildProcess | undefined;
+let restartWatcher: FSWatcher | undefined;
+let restartTimer: NodeJS.Timeout | undefined;
 let restartInProgress = false;
-let queuedRestartReason = null;
+let queuedRestartReason: string | null = null;
 let stopping = false;
-const restartingElectronChildren = new Set();
+const restartingElectronChildren = new Set<ChildProcess>();
 
 try {
   await Promise.race([waitForHttp(viteUrl), waitForExit(vite, "Vite dev server")]);
@@ -38,7 +40,7 @@ try {
   throw error;
 }
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     stopping = true;
     closeRestartWatcher();
@@ -48,8 +50,8 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   });
 }
 
-function startElectron() {
-  const child = spawnManaged(electronPath, [projectRoot], {
+function startElectron(): ChildProcess {
+  const child = spawnManaged(electronBinary, [projectRoot], {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -70,7 +72,7 @@ function startElectron() {
   return child;
 }
 
-function startRestartWatcher() {
+function startRestartWatcher(): FSWatcher {
   const watcher = chokidar.watch(restartWatchPaths, {
     cwd: projectRoot,
     ignoreInitial: true,
@@ -86,30 +88,34 @@ function startRestartWatcher() {
       if (eventName === "addDir" || eventName === "unlinkDir") return;
       scheduleElectronRestart(`${eventName} ${changedPath}`);
     })
-    .on("error", (error) => {
-      console.error(`[hunter:dev] file watcher error: ${error.message}`);
+    .on("error", (error: unknown) => {
+      console.error(`[hunter:dev] file watcher error: ${errorMessage(error)}`);
     })
     .on("ready", () => {
-      console.log("[hunter:dev] watching electron/main.cjs, electron/preload.cjs, server/, and shared/ for restart");
+      console.log("[hunter:dev] watching electron/src, server/, and shared/ for rebuild + restart");
     });
 
   return watcher;
 }
 
-function shouldIgnoreRestartPath(filePath, stats) {
+function shouldIgnoreRestartPath(filePath: string, stats?: { isFile: () => boolean }): boolean {
   const normalizedPath = normalizePath(filePath);
   const relativePath = normalizedPath.startsWith(normalizePath(projectRoot))
     ? normalizePath(relative(projectRoot, filePath))
     : normalizedPath;
 
-  if (relativePath === "electron/dev.mjs" || relativePath.startsWith("electron/resources/") || relativePath.startsWith("server/tests/")) {
+  if (
+    relativePath.startsWith("electron/dist/") ||
+    relativePath.startsWith("electron/resources/") ||
+    relativePath.startsWith("server/tests/")
+  ) {
     return true;
   }
 
   return Boolean(stats?.isFile()) && !restartableExtensions.has(extname(relativePath));
 }
 
-function scheduleElectronRestart(reason) {
+function scheduleElectronRestart(reason: string): void {
   if (stopping) return;
 
   clearTimeout(restartTimer);
@@ -119,7 +125,7 @@ function scheduleElectronRestart(reason) {
   }, electronRestartDebounceMs);
 }
 
-async function restartElectron(reason) {
+async function restartElectron(reason: string): Promise<void> {
   if (stopping) return;
 
   if (restartInProgress) {
@@ -128,9 +134,10 @@ async function restartElectron(reason) {
   }
 
   restartInProgress = true;
-  console.log(`[hunter:dev] ${reason}; restarting Electron`);
+  console.log(`[hunter:dev] ${reason}; rebuilding and restarting Electron`);
 
   try {
+    await buildElectron();
     const previousElectron = electron;
     if (isRunning(previousElectron)) restartingElectronChildren.add(previousElectron);
     await stopAndWait(previousElectron, electronRestartTimeoutMs);
@@ -138,7 +145,7 @@ async function restartElectron(reason) {
       electron = startElectron();
     }
   } catch (error) {
-    console.error(`[hunter:dev] failed to restart Electron: ${error.message}`);
+    console.error(`[hunter:dev] failed to restart Electron: ${errorMessage(error)}`);
     stopping = true;
     closeRestartWatcher();
     stop(vite);
@@ -154,7 +161,7 @@ async function restartElectron(reason) {
   }
 }
 
-function spawnManaged(command, args, options) {
+function spawnManaged(command: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }): ChildProcess {
   return spawn(command, args, {
     ...options,
     stdio: "inherit",
@@ -162,7 +169,7 @@ function spawnManaged(command, args, options) {
   });
 }
 
-function stop(child) {
+function stop(child: ChildProcess | undefined): void {
   if (!child || child.killed) return;
   if (child.pid === undefined) {
     child.kill("SIGTERM");
@@ -181,31 +188,31 @@ function stop(child) {
   }
 }
 
-function stopAndWait(child, timeoutMs) {
+function stopAndWait(child: ChildProcess | undefined, timeoutMs: number): Promise<void> {
   if (!isRunning(child)) {
     return Promise.resolve();
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolveDone) => {
     const timeout = setTimeout(() => {
       console.warn("[hunter:dev] timed out waiting for Electron to stop; launching a fresh process");
-      resolve();
+      resolveDone();
     }, timeoutMs);
 
     child.once("exit", () => {
       clearTimeout(timeout);
-      resolve();
+      resolveDone();
     });
 
     stop(child);
   });
 }
 
-function isRunning(child) {
+function isRunning(child: ChildProcess | undefined): child is ChildProcess {
   return Boolean(child && child.exitCode === null && child.signalCode === null);
 }
 
-function closeRestartWatcher() {
+function closeRestartWatcher(): void {
   clearTimeout(restartTimer);
   restartTimer = undefined;
 
@@ -215,11 +222,11 @@ function closeRestartWatcher() {
   restartWatcher = undefined;
 }
 
-function normalizePath(value) {
+function normalizePath(value: string): string {
   return value.split("\\").join("/");
 }
 
-async function waitForHttp(url) {
+async function waitForHttp(url: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     try {
@@ -228,12 +235,12 @@ async function waitForHttp(url) {
     } catch {
       // Vite is still starting.
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
   }
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-async function waitForExit(child, label) {
+function waitForExit(child: ChildProcess, label: string): Promise<never> {
   return new Promise((_, reject) => {
     child.once("exit", (code, signal) => {
       reject(new Error(`${label} exited before becoming ready: code=${code ?? "null"} signal=${signal ?? "null"}`));
@@ -241,13 +248,13 @@ async function waitForExit(child, label) {
   });
 }
 
-async function assertDevPortFree(url) {
+async function assertDevPortFree(url: string): Promise<void> {
   const parsed = new URL(url);
   const port = Number(parsed.port);
   const host = parsed.hostname;
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolveListening, reject) => {
     const server = net.createServer();
-    server.once("error", (error) => {
+    server.once("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "EADDRINUSE") {
         reject(new Error(`${url} is already in use. Stop the existing Vite process before running pnpm dev.`));
       } else {
@@ -255,8 +262,35 @@ async function assertDevPortFree(url) {
       }
     });
     server.once("listening", () => {
-      server.close(resolve);
+      server.close(() => resolveListening());
     });
     server.listen(port, host);
   });
+}
+
+async function buildElectron(): Promise<void> {
+  await runForExit("pnpm", ["build:electron"], "Electron build");
+}
+
+function runForExit(command: string, args: string[], label: string): Promise<void> {
+  return new Promise((resolveDone, reject) => {
+    const child = spawn(command, args, {
+      cwd: projectRoot,
+      env: process.env,
+      stdio: "inherit"
+    });
+
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolveDone();
+        return;
+      }
+      reject(new Error(`${label} failed: code=${code ?? "null"} signal=${signal ?? "null"}`));
+    });
+  });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

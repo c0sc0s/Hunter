@@ -11,7 +11,7 @@ function withPage(html: string, url = "https://example.com/story") {
   const previousWindow = (globalThis as unknown as { window?: Window }).window;
   (globalThis as { document: Document }).document = dom.window.document;
   (globalThis as { location: Location }).location = dom.window.location;
-  (globalThis as unknown as { window: Window }).window = dom.window;
+  (globalThis as unknown as { window: Window }).window = dom.window as unknown as Window;
   return () => {
     if (previousDocument) {
       (globalThis as { document: Document }).document = previousDocument;

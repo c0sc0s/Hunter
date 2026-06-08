@@ -1,5 +1,85 @@
+type HunterImageCandidate = {
+  url: string;
+  score?: number;
+  source?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  context?: string;
+  inContentRoot?: boolean;
+  order?: number;
+};
+
+type RawImageCandidate = {
+  url: string;
+  score: number;
+  order: number;
+  source?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  context?: string;
+  inContentRoot?: boolean;
+};
+
+type ImageCandidateDetails = {
+  score: number;
+  source?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  context?: string;
+  inContentRoot?: boolean;
+};
+
+type ImageEntry = ImageCandidateDetails & {
+  value: string;
+};
+
+type HunterContentCandidate = {
+  kind: string;
+  text?: string;
+  html?: string;
+  selector?: string;
+  score?: number;
+};
+
+type RawContentCandidate = {
+  kind: string;
+  text: string;
+  html?: string;
+  selector?: string;
+  score: number;
+};
+
+type HunterSnapshot = {
+  url: string;
+  canonicalUrl?: string;
+  title?: string;
+  html?: string;
+  textContent?: string;
+  selectedText?: string;
+  excerpt?: string;
+  siteName?: string;
+  favicon?: string;
+  imageCandidates: HunterImageCandidate[];
+  contentCandidates: HunterContentCandidate[];
+  publishedAt?: string;
+};
+
+type ScoredRoot = {
+  element: Element;
+  score: number;
+};
+
+declare global {
+  interface Window {
+    __hunterExtractPageSnapshot?: () => HunterSnapshot;
+  }
+}
+
 (() => {
-  window.__hunterExtractPageSnapshot = () => {
+  window.__hunterExtractPageSnapshot = (): HunterSnapshot => {
     const captureLimits = {
       title: 500,
       snapshotHtml: 180000,
@@ -20,26 +100,26 @@
     };
     // Minimum focused-root text length before we'll prefer it over the body.
     const minFocusedTextChars = 120;
-    const meta = (selector) => document.querySelector(selector)?.content?.trim();
-    const link = (selector) => document.querySelector(selector)?.href?.trim();
-    const absolutize = (value) => {
+    const meta = (selector: string) => document.querySelector<HTMLMetaElement>(selector)?.content?.trim();
+    const link = (selector: string) => document.querySelector<HTMLLinkElement>(selector)?.href?.trim();
+    const absolutize = (value: unknown): string | undefined => {
       if (!value) return undefined;
       try {
-        return new URL(value, location.href).toString();
+        return new URL(String(value), location.href).toString();
       } catch {
         return undefined;
       }
     };
-    const httpUrl = (value) => {
+    const httpUrl = (value: unknown): string | undefined => {
       const absolute = absolutize(value);
       if (!absolute) return undefined;
       return /^https?:\/\//i.test(absolute) ? absolute : undefined;
     };
-    const cleanText = (value) =>
+    const cleanText = (value: unknown): string =>
       String(value || "")
         .replace(/\s+/g, " ")
         .trim();
-    const selectedText = truncate(cleanText(window.getSelection?.()), captureLimits.selectedText);
+    const selectedText = truncate(cleanText(window.getSelection?.()?.toString() ?? ""), captureLimits.selectedText);
     const rootCandidates = scoreContentRootCandidates();
     const pickedRoot = pickContentRoot(rootCandidates);
     const contentRoot = pickedRoot.element;
@@ -77,20 +157,22 @@
       imageCandidates: imageCandidates
         .slice(0, captureLimits.imageCandidates)
         .map((image) => truncateImageCandidate(image))
-        .filter(Boolean),
+        .filter((candidate): candidate is HunterImageCandidate => Boolean(candidate)),
       contentCandidates,
       publishedAt: truncate(meta('meta[property="article:published_time"]') || meta('meta[name="date"]'), captureLimits.publishedAt)
     };
 
-    function scoreContentRootCandidates() {
+    function scoreContentRootCandidates(): ScoredRoot[] {
       const selectionRoot = selectionContainer();
       const selectionMainRoot = selectionRoot?.closest?.(contentRootSelector());
-      const candidates = [selectionMainRoot, ...document.querySelectorAll(contentRootSelector())].filter(Boolean);
+      const candidates = [selectionMainRoot, ...document.querySelectorAll(contentRootSelector())].filter(
+        (candidate): candidate is Element => Boolean(candidate)
+      );
       const uniqueCandidates = [...new Set(candidates)];
       return uniqueCandidates.map((element) => ({ element, score: scoreContentRoot(element) })).sort((a, b) => b.score - a.score);
     }
 
-    function pickContentRoot(scored) {
+    function pickContentRoot(scored: ScoredRoot[]): ScoredRoot {
       const fallback = { element: document.body || document.documentElement, score: 0 };
       return scored[0]?.score >= 160 ? scored[0] : fallback;
     }
@@ -115,7 +197,7 @@
       ].join(",");
     }
 
-    function scoreContentRoot(element) {
+    function scoreContentRoot(element: Element): number {
       const textLength = textOf(element).length;
       const paragraphCount = element.querySelectorAll?.("p, li, blockquote, pre").length || 0;
       const imageCount = element.querySelectorAll?.("img").length || 0;
@@ -129,11 +211,23 @@
       return textLength + paragraphCount * 80 + imageCount * 40 - structuralPenalty;
     }
 
-    function collectContentCandidates({ contentRoot, rootCandidates, rootText, bodyText, focusedScore }) {
-      const candidates = [];
-      const seen = new Set();
+    function collectContentCandidates({
+      contentRoot,
+      rootCandidates,
+      rootText,
+      bodyText,
+      focusedScore
+    }: {
+      contentRoot: Element;
+      rootCandidates: ScoredRoot[];
+      rootText: string;
+      bodyText: string;
+      focusedScore: number;
+    }): HunterContentCandidate[] {
+      const candidates: RawContentCandidate[] = [];
+      const seen = new Set<string>();
 
-      const add = (kind, element, text, score, includeHtml) => {
+      const add = (kind: string, element: Element, text: string, score: number, includeHtml: boolean) => {
         const clean = cleanText(text);
         if (clean.length < 80) return;
         const key = clean.slice(0, 500);
@@ -167,10 +261,10 @@
       return candidates
         .slice(0, captureLimits.contentCandidates)
         .map((candidate) => truncateContentCandidate(candidate))
-        .filter(Boolean);
+        .filter((candidate): candidate is HunterContentCandidate => Boolean(candidate));
     }
 
-    function selectorForElement(element) {
+    function selectorForElement(element: Element): string | undefined {
       if (!element) return undefined;
       if (element === document.body) return "body";
       if (element === document.documentElement) return "html";
@@ -196,7 +290,7 @@
       return truncate(`${tag}${suffix}`, captureLimits.contentCandidateSelector);
     }
 
-    function cleanSelectorToken(value) {
+    function cleanSelectorToken(value: unknown): string {
       return String(value || "")
         .trim()
         .replace(/[^a-zA-Z0-9_-]/g, "-")
@@ -204,10 +298,10 @@
         .replace(/^-|-$/g, "");
     }
 
-    function pickFavicon() {
+    function pickFavicon(): string | undefined {
       const candidates = [...document.querySelectorAll("link[rel]")].flatMap((element, order) => {
         const rel = (element.getAttribute("rel") || "").toLowerCase();
-        const href = httpUrl(element.getAttribute("href") || element.href);
+        const href = httpUrl(element.getAttribute("href") || (element as HTMLLinkElement).href);
         if (!href) return [];
         const isIcon = rel.split(/\s+/).includes("icon");
         const isAppleTouchIcon = rel.includes("apple-touch-icon");
@@ -224,13 +318,13 @@
       return candidates[0]?.href;
     }
 
-    function iconRelScore(rel) {
+    function iconRelScore(rel: string): number {
       if (rel.includes("apple-touch-icon")) return 30;
       if (rel.split(/\s+/).includes("icon")) return 20;
       return 0;
     }
 
-    function iconSizeScore(value) {
+    function iconSizeScore(value: string | null): number {
       if (!value) return 0;
       if (value.toLowerCase().includes("any")) return 512;
       return Math.max(
@@ -243,17 +337,17 @@
       );
     }
 
-    function selectionContainer() {
+    function selectionContainer(): Element | undefined {
       const selection = window.getSelection?.();
       if (!selection || selection.rangeCount === 0) return undefined;
       const node = selection.getRangeAt(0).commonAncestorContainer;
-      return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      return node.nodeType === Node.ELEMENT_NODE ? (node as Element) : (node.parentElement ?? undefined);
     }
 
-    function collectImageCandidates(root) {
-      const candidates = new Map();
+    function collectImageCandidates(root: Element): RawImageCandidate[] {
+      const candidates = new Map<string, RawImageCandidate>();
       let order = 0;
-      const add = (value, details) => {
+      const add = (value: unknown, details: ImageCandidateDetails) => {
         for (const source of expandImageSource(value)) {
           const absolute = absolutize(source);
           if (!absolute || absolute.startsWith("data:")) continue;
@@ -289,7 +383,7 @@
       return [...candidates.values()].sort((a, b) => b.score - a.score || a.order - b.order);
     }
 
-    function metadataImageDetails(source, score) {
+    function metadataImageDetails(source: string, score: number): ImageCandidateDetails {
       return {
         score,
         source,
@@ -298,21 +392,22 @@
       };
     }
 
-    function numericMeta(selector) {
+    function numericMeta(selector: string): number | undefined {
       const value = meta(selector);
       if (!value) return undefined;
       const parsed = Number.parseInt(value, 10);
       return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
     }
 
-    function imageEntries(root, baseScore, source, inContentRoot) {
+    function imageEntries(root: Element | null | undefined, baseScore: number, source: string, inContentRoot: boolean): ImageEntry[] {
       const images = Array.from(root?.querySelectorAll?.("img, picture source") || []).slice(0, 120);
       return images.flatMap((element) => {
+        const image = element as HTMLImageElement & HTMLSourceElement;
         const width = imageWidth(element);
         const height = imageHeight(element);
-        const hasSrcset = Boolean(element.srcset || element.getAttribute?.("srcset") || element.getAttribute?.("data-srcset"));
+        const hasSrcset = Boolean(image.srcset || element.getAttribute?.("srcset") || element.getAttribute?.("data-srcset"));
         const looksLikeMedia = /(^|\.)twimg\.com\/media\//i.test(
-          `${element.currentSrc || ""} ${element.src || ""} ${element.getAttribute?.("src") || ""} ${element.getAttribute?.("srcset") || ""}`
+          `${image.currentSrc || ""} ${image.src || ""} ${element.getAttribute?.("src") || ""} ${element.getAttribute?.("srcset") || ""}`
         );
         if (!looksLikeMedia && !hasSrcset && width < 120 && height < 120) return [];
         const context = elementImageContext(element);
@@ -323,17 +418,18 @@
           source,
           width,
           height,
-          alt: cleanText(element.alt || element.getAttribute?.("aria-label")),
+          alt: cleanText((element as HTMLImageElement).alt || element.getAttribute?.("aria-label")),
           context,
           inContentRoot
         }));
       });
     }
 
-    function imageSourceValues(element) {
+    function imageSourceValues(element: Element): string[] {
+      const image = element as HTMLImageElement & HTMLSourceElement;
       return [
-        element.currentSrc,
-        element.src,
+        image.currentSrc,
+        image.src,
         element.getAttribute?.("src"),
         element.getAttribute?.("data-src"),
         element.getAttribute?.("data-original"),
@@ -341,11 +437,11 @@
         element.getAttribute?.("data-lazy-src"),
         element.getAttribute?.("data-image-src"),
         element.getAttribute?.("data-full-src"),
-        bestSrcsetUrl(element.srcset || element.getAttribute?.("srcset") || element.getAttribute?.("data-srcset"))
-      ].filter(Boolean);
+        bestSrcsetUrl(image.srcset || element.getAttribute?.("srcset") || element.getAttribute?.("data-srcset"))
+      ].filter((value): value is string => typeof value === "string" && value.length > 0);
     }
 
-    function backgroundEntries(root, baseScore, source, inContentRoot) {
+    function backgroundEntries(root: Element | null | undefined, baseScore: number, source: string, inContentRoot: boolean): ImageEntry[] {
       return Array.from(root?.querySelectorAll?.("[style*='background']") || [])
         .slice(0, 120)
         .flatMap((element) => {
@@ -362,12 +458,12 @@
         });
     }
 
-    function expandImageSource(value) {
+    function expandImageSource(value: unknown): string[] {
       const srcset = bestSrcsetUrl(value);
-      return srcset ? [srcset] : [value].filter(Boolean);
+      return srcset ? [srcset] : [value].filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
     }
 
-    function bestSrcsetUrl(value) {
+    function bestSrcsetUrl(value: unknown): string | undefined {
       if (!value) return undefined;
       if (!String(value).includes(",")) return undefined;
       return String(value)
@@ -385,12 +481,12 @@
         .sort((a, b) => b.score - a.score)[0]?.url;
     }
 
-    function imageUrlsFromCss(value) {
+    function imageUrlsFromCss(value: unknown): string[] {
       if (!value) return [];
       return Array.from(String(value).matchAll(/url\((['"]?)(.*?)\1\)/g), (match) => match[2]).filter(Boolean);
     }
 
-    function elementImageBonus(element) {
+    function elementImageBonus(element: Element): number {
       const context = elementImageContext(element);
       let bonus = 0;
       if (/tweetPhoto|\/photo\/|image|photo|cover|hero/i.test(context)) bonus += 240;
@@ -399,9 +495,9 @@
       return bonus;
     }
 
-    function elementImageContext(element) {
+    function elementImageContext(element: Element): string {
       return cleanText(
-        `${element.alt || ""} ${element.getAttribute?.("aria-label") || ""} ${element.getAttribute?.("data-testid") || ""} ${
+        `${(element as HTMLImageElement).alt || ""} ${element.getAttribute?.("aria-label") || ""} ${element.getAttribute?.("data-testid") || ""} ${
           element.className || ""
         } ${element.id || ""} ${
           element.closest?.("[data-testid='tweetPhoto'], a[href*='/photo/'], figure, article, main")?.getAttribute?.("data-testid") || ""
@@ -409,8 +505,8 @@
       );
     }
 
-    function scoreImageUrl(value) {
-      let parsed;
+    function scoreImageUrl(value: string): number {
+      let parsed: URL;
       try {
         parsed = new URL(value);
       } catch {
@@ -429,25 +525,27 @@
       return score;
     }
 
-    function imageWidth(element) {
+    function imageWidth(element: Element): number {
+      const image = element as HTMLImageElement;
       return (
-        element.naturalWidth ||
-        element.width ||
+        image.naturalWidth ||
+        image.width ||
         Number(element.getAttribute?.("width")) ||
         Math.round(element.getBoundingClientRect?.().width || 0)
       );
     }
 
-    function imageHeight(element) {
+    function imageHeight(element: Element): number {
+      const image = element as HTMLImageElement;
       return (
-        element.naturalHeight ||
-        element.height ||
+        image.naturalHeight ||
+        image.height ||
         Number(element.getAttribute?.("height")) ||
         Math.round(element.getBoundingClientRect?.().height || 0)
       );
     }
 
-    function serializeFocusedHtml(root) {
+    function serializeFocusedHtml(root: Element): string {
       const headHtml = Array.from(
         document.head?.querySelectorAll(
           [
@@ -479,11 +577,11 @@
       return `<!doctype html><html><head>${headHtml}${jsonLdHtml}</head><body>${rootHtml}</body></html>`;
     }
 
-    function textOf(element) {
-      return cleanText(element?.innerText || element?.textContent);
+    function textOf(element: Element | null | undefined): string {
+      return cleanText((element as HTMLElement | null | undefined)?.innerText || element?.textContent);
     }
 
-    function truncateImageCandidate(candidate) {
+    function truncateImageCandidate(candidate: RawImageCandidate): HunterImageCandidate | undefined {
       const url = truncate(candidate.url, captureLimits.imageCandidateUrl);
       if (!url) return undefined;
       return {
@@ -499,7 +597,7 @@
       };
     }
 
-    function truncateContentCandidate(candidate) {
+    function truncateContentCandidate(candidate: RawContentCandidate): HunterContentCandidate | undefined {
       const text = truncate(candidate.text, captureLimits.contentCandidateText);
       const html = truncate(candidate.html, captureLimits.contentCandidateHtml);
       if (!text && !html) return undefined;
@@ -513,17 +611,19 @@
       };
     }
 
-    function positiveInteger(value) {
-      return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
+    function positiveInteger(value: unknown): number | undefined {
+      return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
     }
 
-    function nonNegativeInteger(value) {
-      return Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+    function nonNegativeInteger(value: unknown): number | undefined {
+      return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
     }
 
-    function truncate(value, limit) {
-      if (!value) return undefined;
+    function truncate(value: unknown, limit: number): string | undefined {
+      if (typeof value !== "string" || value.length === 0) return undefined;
       return value.length > limit ? value.slice(0, limit) : value;
     }
   };
 })();
+
+export {};

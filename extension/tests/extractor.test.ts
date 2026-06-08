@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { transform } from "esbuild";
 import { JSDOM } from "jsdom";
 
-const extractorScript = await readFile("extension/src/extractor.js", "utf8");
+const extractorSource = await readFile("extension/src/extractor.ts", "utf8");
+const { code: extractorScript } = await transform(extractorSource, {
+  loader: "ts",
+  format: "iife",
+  target: "chrome120"
+});
 const noisyNavigation = Array.from({ length: 400 }, (_, index) => `Navigation item ${index}`).join(" ");
 const dom = new JSDOM(
   `<!doctype html>
@@ -41,11 +47,11 @@ const snapshot = (dom.window as unknown as { __hunterExtractPageSnapshot: () => 
 assert.equal(snapshot.url, "https://example.com/articles/focused-capture?utm_source=noise");
 assert.equal(snapshot.title, "Noisy page");
 assert.equal(snapshot.canonicalUrl, "https://example.com/articles/focused-capture?utm_source=noise");
-assert.match(snapshot.html, /<article>/);
-assert.match(snapshot.html, /Browser snapshot capture should prefer/);
-assert.doesNotMatch(snapshot.html, /Navigation item 399/);
-assert.match(snapshot.textContent, /focused content root/);
-assert.doesNotMatch(snapshot.textContent, /Navigation item 399/);
+assert.match(snapshot.html ?? "", /<article>/);
+assert.match(snapshot.html ?? "", /Browser snapshot capture should prefer/);
+assert.doesNotMatch(snapshot.html ?? "", /Navigation item 399/);
+assert.match(snapshot.textContent ?? "", /focused content root/);
+assert.doesNotMatch(snapshot.textContent ?? "", /Navigation item 399/);
 assert.equal(snapshot.favicon, "https://example.com/apple-touch-icon.png");
 assert.equal(
   JSON.stringify(candidateUrls(snapshot).slice(0, 2)),

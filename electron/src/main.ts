@@ -1,22 +1,34 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
-const { spawn } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { spawn, type ChildProcess, type ChildProcessByStdio } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import type { Readable } from "node:stream";
+
+import type { ApiReadyPayload } from "../../shared/desktopBridge";
 
 const PORT_RANGE = "4317-4319";
 const SIDECAR_WAIT_MS = 10_000;
 
+const projectRoot = path.resolve(__dirname, "..", "..");
 const isDev = process.env.HUNTER_ELECTRON_DEV === "1" || !app.isPackaged;
 
-let mainWindow = null;
-let apiBase = null;
-let sidecar = null;
+type SidecarProcess = ChildProcessByStdio<null, Readable, Readable>;
+
+type SidecarCommand = {
+  program: string;
+  args: string[];
+  cwd: string;
+};
+
+let mainWindow: BrowserWindow | null = null;
+let apiBase: string | null = null;
+let sidecar: SidecarProcess | null = null;
 let shuttingDown = false;
 
 ipcMain.handle("hunter:get-api-base", () => apiBase);
 ipcMain.handle("hunter:is-autostart-available", () => app.isPackaged);
 ipcMain.handle("hunter:get-autostart", () => (app.isPackaged ? app.getLoginItemSettings().openAtLogin : false));
-ipcMain.handle("hunter:set-autostart", (_event, enabled) => {
+ipcMain.handle("hunter:set-autostart", (_event: IpcMainInvokeEvent, enabled: unknown) => {
   if (!app.isPackaged) return false;
 
   app.setLoginItemSettings({
@@ -26,16 +38,22 @@ ipcMain.handle("hunter:set-autostart", (_event, enabled) => {
   return app.getLoginItemSettings().openAtLogin;
 });
 
-app.whenReady().then(async () => {
-  await startSidecar();
-  createWindow();
+app
+  .whenReady()
+  .then(async () => {
+    await startSidecar();
+    createWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  })
+  .catch((error: unknown) => {
+    console.error(`[hunter] failed to start Electron app: ${errorMessage(error)}`);
+    app.quit();
   });
-});
 
 app.on("before-quit", () => {
   shuttingDown = true;
@@ -46,13 +64,13 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     shutdownFromSignal();
   });
 }
 
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
@@ -80,11 +98,11 @@ function createWindow() {
   if (isDev) {
     void mainWindow.loadURL(rendererUrl);
   } else {
-    void mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    void mainWindow.loadFile(path.join(projectRoot, "dist", "index.html"));
   }
 }
 
-function registerExternalLinkHandlers(window, appUrl) {
+function registerExternalLinkHandlers(window: BrowserWindow, appUrl: string | null): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalLink(url);
     return { action: "deny" };
@@ -98,16 +116,16 @@ function registerExternalLinkHandlers(window, appUrl) {
   });
 }
 
-function openExternalLink(url) {
+function openExternalLink(url: string): boolean {
   if (!isHttpUrl(url)) return false;
 
-  void shell.openExternal(url).catch((error) => {
-    console.error(`[hunter] failed to open external link ${url}: ${error.message}`);
+  void shell.openExternal(url).catch((error: unknown) => {
+    console.error(`[hunter] failed to open external link ${url}: ${errorMessage(error)}`);
   });
   return true;
 }
 
-function isAllowedAppNavigation(url, appUrl) {
+function isAllowedAppNavigation(url: string, appUrl: string | null): boolean {
   if (!appUrl) return false;
 
   try {
@@ -117,7 +135,7 @@ function isAllowedAppNavigation(url, appUrl) {
   }
 }
 
-function isHttpUrl(url) {
+function isHttpUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -126,7 +144,7 @@ function isHttpUrl(url) {
   }
 }
 
-function startSidecar() {
+function startSidecar(): Promise<void> {
   const command = resolveSidecarCommand();
   const dataDir = resolveDataDir();
 
@@ -160,14 +178,15 @@ function startSidecar() {
       resolveStartup();
     }, SIDECAR_WAIT_MS);
 
-    const handleStdoutLine = (line) => {
+    const handleStdoutLine = (line: string) => {
       console.log(`[sidecar] ${line}`);
       const port = parsePortLine(line);
       if (port && !apiBase) {
         clearTimeout(timeout);
         apiBase = `http://127.0.0.1:${port}`;
+        const payload = { base: apiBase } satisfies ApiReadyPayload;
         console.log(`[hunter] api ready: ${apiBase}`);
-        mainWindow?.webContents.send("hunter:api-ready", { base: apiBase });
+        mainWindow?.webContents.send("hunter:api-ready", payload);
         resolveStartup();
       }
     };
@@ -175,11 +194,11 @@ function startSidecar() {
     let stdoutBuffer = "";
     let stderrBuffer = "";
 
-    sidecar.stdout.on("data", (chunk) => {
+    sidecar.stdout.on("data", (chunk: string | Buffer) => {
       stdoutBuffer = flushLines(stdoutBuffer + chunk, handleStdoutLine);
     });
 
-    sidecar.stderr.on("data", (chunk) => {
+    sidecar.stderr.on("data", (chunk: string | Buffer) => {
       stderrBuffer = flushLines(stderrBuffer + chunk, (line) => {
         console.error(`[sidecar:err] ${line}`);
       });
@@ -203,7 +222,7 @@ function startSidecar() {
   });
 }
 
-function shutdownFromSignal() {
+function shutdownFromSignal(): void {
   if (shuttingDown) return;
   shuttingDown = true;
   stopSidecar();
@@ -213,7 +232,7 @@ function shutdownFromSignal() {
   }, 1_000).unref();
 }
 
-function flushLines(buffer, onLine) {
+function flushLines(buffer: string, onLine: (line: string) => void): string {
   const lines = buffer.split(/\r?\n/);
   const tail = lines.pop() ?? "";
   for (const line of lines) {
@@ -222,9 +241,13 @@ function flushLines(buffer, onLine) {
   return tail;
 }
 
-function stopSidecar() {
+function stopSidecar(): void {
   const child = sidecar;
   sidecar = null;
+  stopChild(child);
+}
+
+function stopChild(child: ChildProcess | null): void {
   if (!child || child.killed) return;
   if (child.pid === undefined) {
     child.kill("SIGTERM");
@@ -243,8 +266,7 @@ function stopSidecar() {
   }
 }
 
-function resolveSidecarCommand() {
-  const projectRoot = path.resolve(__dirname, "..");
+function resolveSidecarCommand(): SidecarCommand {
   const runtime = process.execPath;
 
   if (isDev) {
@@ -262,15 +284,19 @@ function resolveSidecarCommand() {
   };
 }
 
-function resolveDataDir() {
-  const dir = isDev ? path.join(path.resolve(__dirname, ".."), "data") : app.getPath("userData");
-  fs.mkdirSync(dir, { recursive: true });
+function resolveDataDir(): string {
+  const dir = isDev ? path.join(projectRoot, "data") : app.getPath("userData");
+  mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-function parsePortLine(line) {
+function parsePortLine(line: string): number | null {
   const match = /HUNTER_API_PORT=(\d{1,5})/.exec(line);
   if (!match) return null;
   const port = Number(match[1]);
   return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

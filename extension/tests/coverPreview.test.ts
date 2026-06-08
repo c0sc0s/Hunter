@@ -184,6 +184,53 @@ test("collectCoverCandidatesInPage ranks X tweet media ahead of X default og ima
   }
 });
 
+test("collectCoverCandidatesInPage ignores X default og image so the popup can keep waiting for real media", () => {
+  const restore = setupDocument(`
+    <html>
+      <head>
+        <meta property="og:image" content="https://abs.twimg.com/rweb/ssr/default/v2/og/image.png" />
+      </head>
+      <body>
+        <main>
+          <article>
+            <p>The post text rendered before the media.</p>
+          </article>
+        </main>
+      </body>
+    </html>
+  `);
+  try {
+    assert.deepEqual(collectCoverCandidatesInPage(), []);
+  } finally {
+    restore();
+  }
+});
+
+test("collectCoverCandidatesInPage scans body fallback when the first main root has no media yet", () => {
+  const restore = setupDocument(`
+    <html>
+      <head>
+        <meta property="og:image" content="https://abs.twimg.com/rweb/ssr/default/v2/og/image.png" />
+      </head>
+      <body>
+        <main>
+          <article>
+            <p>The title and text rendered before the media card.</p>
+          </article>
+        </main>
+        <div data-testid="tweetPhoto" style="background-image: url('https://pbs.twimg.com/media/G9vQWfBaMAA-demo?format=jpg&amp;name=large')"></div>
+      </body>
+    </html>
+  `);
+  try {
+    const candidates = collectCoverCandidatesInPage();
+    assert.equal(candidateUrls(candidates)[0], "https://pbs.twimg.com/media/G9vQWfBaMAA-demo?format=jpg&name=large");
+    assert.equal(candidates[0]?.source, "page_background");
+  } finally {
+    restore();
+  }
+});
+
 test("collectCoverCandidatesInPage survives malformed JSON-LD", () => {
   const restore = setupDocument(`
     <html>

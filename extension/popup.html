@@ -22,10 +22,6 @@
           <img id="coverPhoto" class="cover-photo" alt="" referrerpolicy="no-referrer" loading="lazy" decoding="async" hidden />
         </div>
         <div class="page-body">
-          <div class="page-meta">
-            <span id="pageHost" class="source-chip">Current page</span>
-            <span class="snapshot-chip">snapshot</span>
-          </div>
           <h2 id="pageTitle">Loading</h2>
           <p id="pageUrl"></p>
         </div>
@@ -38,29 +34,10 @@
 
       <section class="card form-card" aria-label="Save metadata">
         <label class="field">
-          <span>Tags</span>
-          <input id="tags" autocomplete="off" placeholder="ai, product" />
-        </label>
-
-        <label class="field">
           <span>Note</span>
           <textarea id="note" placeholder="why this matters"></textarea>
         </label>
       </section>
-
-      <details class="card api-card">
-        <summary>
-          <span class="summary-copy">
-            <span>API endpoint</span>
-            <small>Local Hunter server</small>
-          </span>
-          <span class="summary-chevron" aria-hidden="true"></span>
-        </summary>
-        <label class="field api-field">
-          <span>Base URL</span>
-          <input id="apiBase" autocomplete="off" spellcheck="false" />
-        </label>
-      </details>
 
       <footer class="actions">
         <button id="saveButton" type="button">
@@ -69,9 +46,9 @@
             <path d="M12 7v6" />
             <path d="M9 10h6" />
           </svg>
-          <span>Save</span>
+          <span id="saveButtonLabel">Save</span>
         </button>
-        <p id="status" role="status" aria-live="polite"></p>
+        <p id="status" class="sr-only" role="status" aria-live="polite"></p>
       </footer>
     </main>
     <script type="module" src="src/popup.js"></script>

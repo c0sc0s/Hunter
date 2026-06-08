@@ -22,9 +22,34 @@ flowchart LR
 - `server/recognitionJobs.ts`: durable background recognition runner triggered on startup and enqueue.
 - `server/repositories/jsonRepository.ts`: default development adapter.
 - `server/repositories/sqliteRepository.ts`: opt-in local-first adapter with indexes and FTS maintenance.
-- `shared/`: shared TypeScript types.
-- `extension/`: Chrome Manifest V3 extension.
+- `shared/`: shared TypeScript contracts and pure helpers used across runtime boundaries.
+- `electron/src/`: Electron main, preload, and dev orchestrator TypeScript source.
+- `electron/dist/`: generated Electron runtime entry files consumed by Electron and electron-builder.
+- `extension/src/`: Chrome Manifest V3 TypeScript source.
+- `extension/dist/`: generated load-unpacked Chrome extension root.
 - `docs/`: product and technical design.
+
+## Engineering Model
+
+Hunter is a multi-runtime TypeScript app, not a single web bundle. TypeScript project references are split by runtime:
+
+- `shared/tsconfig.json`: pure shared contracts and helpers.
+- `server/tsconfig.json`: Node sidecar, adapters, repositories, and server tests.
+- `tsconfig.renderer.json`: React/Vite renderer.
+- `electron/tsconfig.json`: Electron main, preload, and dev orchestrator.
+- `extension/tsconfig.json`: Chrome MV3 source and extension tests.
+- `scripts/tsconfig.json`: golden, smoke, harness, and Vite config tooling.
+
+The root `tsconfig.json` is a references-only solution file. `pnpm check` runs `tsc -b`, emitting declaration-only metadata into ignored `.tsbuild/` so cross-project imports are checked without producing runtime JavaScript in source directories.
+
+Generated runtime artifacts are explicit:
+
+- `pnpm build:renderer` writes Vite assets to `dist/`.
+- `pnpm build:electron` bundles `electron/src/main.ts` and `electron/src/preload.ts` to `electron/dist/main.cjs` and `electron/dist/preload.cjs`.
+- `pnpm extension:build` writes the installable extension root to `extension/dist/`.
+- `pnpm server:bundle` writes the packaged sidecar to `electron/resources/`.
+
+The renderer does not import Electron or Node directly. The preload bridge contract lives in `shared/desktopBridge.ts`, the preload exposes that exact shape through `contextBridge`, and renderer code accesses it through `src/lib/desktopBridge.ts`.
 
 ## Data Model
 
@@ -149,6 +174,8 @@ When the snapshot does not contain enough text for `ready`, the adapter returns 
 
 ## Extension Design
 
+The extension source is TypeScript under `extension/src/`, checked by `pnpm extension:check`. `pnpm extension:build` bundles the Manifest V3 service worker, popup module, and injected extractor with esbuild, then writes the installable extension root to `extension/dist/`. `pnpm extension:watch` reruns the same build on source/static changes for local development; Chrome's unpacked extension still needs a reload after rebuild. Local Chrome installs and `pnpm golden:extension` load the generated dist directory, not raw source files.
+
 The extension requests minimum practical permissions:
 
 - `activeTab`: temporary access to the current page after user action.
@@ -161,7 +188,7 @@ The extension requests minimum practical permissions:
 
 The extension sends page snapshots to `http://127.0.0.1:4317/api/items` by default. Save always carries a snapshot; there is no URL-only entry point. Its injected extractor prefers a focused content root over a blind full-page DOM slice, preserving metadata while avoiding huge shells, navigation, and sidebars where possible. It also ships a bounded `contentCandidates` list with the focused root, high-scoring alternate content roots, and a text-only body fallback, so server recognition can recover when a single focused root is too narrow or noisy. It ranks image candidates from metadata, focused-root images, responsive/lazy image attributes, and inline background images before applying the candidate cap, and sends structured candidate fields (`url`, `source`, `score`, dimensions, alt/context, and content-root membership) so server cover selection can choose the best usable index cover instead of trusting metadata order alone. It caps snapshot HTML, text, selected text, content candidates, and image candidates before sending the request. The background worker exposes an internal save-tab message path so popup, context menu, keyboard shortcut, and tests can share the same extraction and POST behavior. The popup no longer owns duplicate extraction or POST logic; it collects UI inputs and delegates Save to the background path. After save, the web client refreshes only when the user clicks `Reload` or runs `/reload`; there is no frontend polling loop. Capture Events have a separate sidebar panel and `/events` command for manual diagnostics refresh.
 
-The extension previously ran a lightweight support gate before showing the save form or accepting background/context-menu saves. That gate is currently disabled via `CONTENT_SUPPORT_GATE_ENABLED=false` in `extension/src/contentSupport.js` after internal article pages proved the detector too narrow. The detector code remains for future redesign, but active save paths now show the popup form and post snapshots for any injectable browser page. The server recognition pipeline still owns final `sourceType`, extraction state, content quality, and canonical metadata after it receives the snapshot.
+The extension previously ran a lightweight support gate before showing the save form or accepting background/context-menu saves. That gate is currently disabled via `CONTENT_SUPPORT_GATE_ENABLED=false` in `extension/src/contentSupport.ts` after internal article pages proved the detector too narrow. The detector code remains for future redesign, but active save paths now show the popup form and post snapshots for any injectable browser page. The server recognition pipeline still owns final `sourceType`, extraction state, content quality, and canonical metadata after it receives the snapshot.
 
 `pnpm golden:extension` installs the real Manifest V3 extension into Chromium against isolated local API, web, and article fixture servers. The test temporarily patches only the copied manifest to grant random localhost ports, then verifies ready browser-snapshot recognition, `chrome.action.openPopup()` toolbar action launch, visible popup Save, Web manual Reload, Capture Events, stripped public `captureInput`, and no raw snapshot text in the event stream. Playwright does not expose Chrome's native toolbar bubble as an interactable page target in this workspace, so the Save click remains on the observable popup page that uses the same production popup UI and background save pipeline.
 
@@ -195,7 +222,7 @@ The web client renders recent Capture Events in a compact sidebar panel. It show
 
 `pnpm verify` is the single local and hosted quality gate. It runs harness validation, TypeScript, ESLint, Prettier format check, deterministic fixtures, API smoke, browser golden, installed extension golden, visual golden, and production build. GitHub Actions mirrors that command in `.github/workflows/verify.yml` on pull requests and pushes to `main`.
 
-ESLint uses the flat config format in `eslint.config.js` for TypeScript, React, Node-side scripts, and extension JavaScript. `pnpm lint` runs with `--max-warnings=0`, so warning regressions fail locally and in CI. The only scoped fast-refresh export exception is for shadcn UI primitives under `src/components/ui/`, where variant helpers are part of the local component API; app code keeps the stricter export check. Prettier is configured through `.prettierrc.json` and `.prettierignore`; generated and machine-state artifacts such as `feature-list.json`, `pnpm-lock.yaml`, `dist/`, `data/`, and visual screenshot output are excluded from formatting checks.
+ESLint uses the flat config format in `eslint.config.js` for TypeScript, React, Node-side scripts, Electron source, and extension TypeScript. `pnpm lint` runs with `--max-warnings=0`, so warning regressions fail locally and in CI. The only scoped fast-refresh export exception is for shadcn UI primitives under `src/components/ui/`, where variant helpers are part of the local component API; app code keeps the stricter export check. Prettier is configured through `.prettierrc.json` and `.prettierignore`; generated and machine-state artifacts such as `feature-list.json`, `pnpm-lock.yaml`, `.tsbuild/`, `dist/`, `electron/dist/`, `extension/dist/`, `data/`, and visual screenshot output are excluded from formatting checks.
 
 The CI workflow uses Node 22 because the SQLite adapter currently depends on Node's built-in `node:sqlite`. It installs Playwright Chromium with system dependencies and runs verification under Xvfb so the installed Manifest V3 extension golden can launch headed Chromium.
 

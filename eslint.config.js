@@ -16,7 +16,10 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "release/**",
-      "electron/resources/**"
+      ".tsbuild/**",
+      "electron/dist/**",
+      "electron/resources/**",
+      "extension/dist/**"
     ]
   },
   {
@@ -54,7 +57,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["server/**/*.ts", "scripts/**/*.{ts,mjs}", "shared/**/*.ts", "vite.config.ts", "electron/**/*.mjs"],
+    files: ["server/**/*.ts", "scripts/**/*.{ts,mjs}", "shared/**/*.ts", "vite.config.ts", "electron/src/**/*.ts"],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -73,7 +76,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["extension/**/*.js"],
+    files: ["extension/src/**/*.ts"],
     languageOptions: {
       sourceType: "module",
       globals: {

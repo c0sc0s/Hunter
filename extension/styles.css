@@ -155,9 +155,7 @@ h1 {
 
 .app-header p,
 .field span,
-#pageUrl,
-#status,
-summary small {
+#pageUrl {
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -181,8 +179,7 @@ summary small {
 }
 
 .page-card::after,
-.form-card::after,
-.api-card::after {
+.form-card::after {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -239,47 +236,8 @@ summary small {
 
 .page-body {
   display: grid;
-  gap: 6px;
-  padding: 9px 12px 10px;
-}
-
-.page-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.source-chip,
-.snapshot-chip {
-  display: inline-flex;
-  height: 20px;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-chip {
-  max-width: 100%;
-  border: 1px solid color-mix(in oklch, var(--border), transparent 30%);
-  background: color-mix(in oklch, var(--secondary), transparent 8%);
-  color: var(--secondary-foreground);
-  padding: 0 8px;
-}
-
-.snapshot-chip {
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in oklch, var(--border), transparent 30%);
-  background: color-mix(in oklch, var(--input), transparent 18%);
-  color: var(--muted-foreground);
-  padding: 0 7px;
+  gap: 5px;
+  padding: 11px 12px 10px;
 }
 
 h2 {
@@ -374,61 +332,8 @@ textarea {
   resize: vertical;
 }
 
-.api-card {
-  background: color-mix(in oklch, var(--card), transparent 12%);
-}
-
-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  list-style: none;
-  padding: 8px 12px;
-}
-
-summary::-webkit-details-marker {
-  display: none;
-}
-
-.summary-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.summary-copy > span {
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.summary-chevron {
-  width: 8px;
-  height: 8px;
-  border-right: 1.5px solid var(--muted-foreground);
-  border-bottom: 1.5px solid var(--muted-foreground);
-  transform: rotate(45deg);
-  transition: transform var(--motion-fast) var(--ease-out-soft);
-}
-
-details[open] .summary-chevron {
-  transform: rotate(225deg) translate(-1px, -1px);
-}
-
-.api-field {
-  border-top: 1px solid color-mix(in oklch, var(--border), transparent 35%);
-  padding: 10px 12px 12px;
-}
-
-#apiBase {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .actions {
   display: grid;
-  gap: 8px;
 }
 
 button {
@@ -482,50 +387,31 @@ button:disabled {
   opacity: 0.5;
 }
 
-#status {
-  position: relative;
-  min-height: 16px;
-  padding-left: 14px;
-  line-height: 1.4;
+button[data-state="saving"],
+button[data-state="loading"] {
+  color: color-mix(in oklch, var(--primary-foreground), transparent 5%);
 }
 
-#status::before {
+button[data-state="saved"],
+button[data-state="queued"] {
+  border-color: color-mix(in oklch, var(--chart-2), transparent 55%);
+  background: color-mix(in oklch, var(--chart-2), var(--primary) 72%);
+  color: var(--primary-foreground);
+}
+
+button[data-state="error"] {
+  border-color: color-mix(in oklch, var(--destructive), transparent 45%);
+  background: color-mix(in oklch, var(--destructive), var(--primary) 74%);
+  color: var(--primary-foreground);
+}
+
+.sr-only {
   position: absolute;
-  top: 0.47em;
-  left: 1px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--muted-foreground);
-  content: "";
-}
-
-#status:empty::before {
-  display: none;
-}
-
-#status[data-state="success"] {
-  color: var(--chart-2);
-}
-
-#status[data-state="success"]::before {
-  background: var(--chart-2);
-}
-
-#status[data-state="error"] {
-  color: var(--destructive);
-}
-
-#status[data-state="error"]::before {
-  background: var(--destructive);
-}
-
-#status[data-state="saving"] {
-  color: var(--primary);
-}
-
-#status[data-state="saving"]::before {
-  background: var(--primary);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

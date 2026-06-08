@@ -1,14 +1,6 @@
-export type ApiReadyPayload = {
-  base: string;
-};
+import type { HunterDesktopBridge } from "../../shared/desktopBridge";
 
-export type HunterDesktopBridge = {
-  getApiBase: () => Promise<string | null>;
-  onApiReady: (listener: (payload: ApiReadyPayload) => void) => () => void;
-  isAutostartAvailable: () => Promise<boolean>;
-  getAutostart: () => Promise<boolean>;
-  setAutostart: (enabled: boolean) => Promise<boolean>;
-};
+export type { ApiReadyPayload, HunterDesktopBridge } from "../../shared/desktopBridge";
 
 declare global {
   interface Window {

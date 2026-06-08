@@ -3,6 +3,7 @@ dist/
 data/
 artifacts/
 .harness-artifacts/
+.tsbuild/
 playwright-report/
 test-results/
 pnpm-lock.yaml
@@ -11,5 +12,7 @@ feature-list.json
 electron/resources/server.cjs
 electron/resources/server.cjs.map
 electron/resources/runtime/
+electron/dist/
+extension/dist/
 electron/.bundle-tmp/
 release/

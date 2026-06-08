@@ -30,16 +30,24 @@ Useful commands:
 
 ```bash
 pnpm harness:init
+pnpm check
 pnpm verify
 pnpm lint
 pnpm format:check
+pnpm build:renderer
+pnpm build:electron
 pnpm golden:browser
 pnpm golden:extension
 pnpm golden:visual
 pnpm golden:visual:update
+pnpm extension:check
+pnpm extension:build
+pnpm extension:watch
 pnpm electron:dir
 pnpm electron:build
 ```
+
+`pnpm check` uses TypeScript project references across `shared`, `server`, `src` renderer, `electron`, `extension`, and `scripts`. The check emits declaration-only build metadata into the ignored `.tsbuild/` directory so cross-project contracts are checked without writing runtime JavaScript into source folders.
 
 `pnpm electron:dir` builds an unsigned unpacked app for local smoke testing. `pnpm electron:build` produces the current platform installer through electron-builder; release signing/notarization is still separate release work.
 
@@ -58,16 +66,34 @@ pnpm build
 ## Chrome Extension
 
 1. Start the local app with `pnpm dev` — this launches the Electron desktop shell, which spawns the Node sidecar that serves the API on the first free port in `4317–4319`.
-2. Open `chrome://extensions`.
-3. Enable Developer mode.
-4. Click Load unpacked.
-5. Choose this repository's `extension/` directory.
+2. In another terminal, run `pnpm extension:build` once, or `pnpm extension:watch` while actively editing extension code.
+3. Open `chrome://extensions`.
+4. Enable Developer mode.
+5. Click Load unpacked.
+6. Choose this repository's `extension/dist/` directory.
 
 The extension probes `127.0.0.1:4317`, `4318`, `4319` in order and uses the first one that responds — so it talks to whichever port the Electron-managed sidecar happens to bind.
 
 When saving a page, the extension captures a focused article/main content root when possible instead of blindly sending the full page shell. It caps snapshot HTML, text, and image candidates before posting to the local API so Save stays responsive on heavy pages. Toolbar action popup launch, Popup Save, context-menu Save, and extension E2E all route through the same background capture pipeline.
 
-`pnpm golden:extension` runs the installed extension against isolated local API, web, and article fixture servers. It proves extension background capture, toolbar action popup launch through `chrome.action.openPopup()`, visible popup Save, Web manual Reload, Capture Events visibility, and no public `captureInput` leakage.
+The extension source is TypeScript under `extension/src/`. `pnpm extension:check` type-checks the extension, `pnpm extension:build` bundles the MV3 service worker, popup, and injected extractor into `extension/dist/`, and `pnpm extension:watch` repeats the same build whenever source/static extension files change. Chrome still needs the unpacked extension to be reloaded after a rebuild. `pnpm golden:extension` builds that dist directory, then runs the installed extension against isolated local API, web, and article fixture servers. It proves extension background capture, toolbar action popup launch through `chrome.action.openPopup()`, visible popup Save, Web manual Reload, Capture Events visibility, and no public `captureInput` leakage.
+
+## Engineering Model
+
+Hunter is organized as a multi-runtime TypeScript application:
+
+- `shared/`: pure shared contracts and helpers; no DOM, Electron, Chrome, Express, or SQLite dependencies.
+- `server/`: TypeScript Node sidecar for API, recognition, repositories, and tests.
+- `src/`: TypeScript React/Vite renderer.
+- `electron/src/`: TypeScript Electron main, preload, and dev orchestrator source.
+- `electron/dist/`: generated Electron runtime entry files used by Electron and electron-builder.
+- `extension/src/`: TypeScript Chrome MV3 runtime source.
+- `extension/dist/`: generated load-unpacked extension root.
+- `scripts/`: TypeScript/MJS build, smoke, and golden tooling.
+
+`pnpm build` runs the full source gate, then builds renderer assets, Electron runtime files, and the extension dist. `pnpm electron:dir` and `pnpm electron:build` add the server sidecar bundle and pass those generated runtime artifacts to electron-builder.
+
+The Electron preload bridge contract lives in `shared/desktopBridge.ts` and is re-exported by `src/lib/desktopBridge.ts`, so renderer and preload compile against the same API surface.
 
 ## Content Recognition
 
@@ -83,12 +109,13 @@ The save action is intentionally fast: it writes a queued item and a durable rec
 
 ## Project Structure
 
-- `src/`: React web client.
-- `server/`: Express API, content recognition, content signals, JSON store adapter.
+- `src/`: React/Vite renderer.
+- `server/`: Express API, content recognition, content signals, JSON and SQLite repository adapters.
 - `server/repositories/`: Repository interface plus JSON and SQLite adapters.
 - `server/sources/`: source adapters for generic web, X, Feishu, PDF, and video snapshots.
-- `shared/`: shared TypeScript types.
-- `extension/`: Chrome Manifest V3 extension.
+- `shared/`: shared TypeScript contracts and pure helpers.
+- `electron/`: Electron desktop shell source, generated runtime entry files, icons, and sidecar resources.
+- `extension/`: Chrome Manifest V3 extension source and generated local install target.
 - `docs/`: product and technical design.
 
 ## Source Behavior
